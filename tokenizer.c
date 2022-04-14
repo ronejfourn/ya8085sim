@@ -1,6 +1,8 @@
 #include "tokenizer.h"
 #include <stdio.h>
 
+// TODO: use formatted strings to for error
+
 token tokenizer_get_next(tokenizer *tk){
 	token tok;
 
@@ -139,5 +141,6 @@ void token_print(token tok) {
 			printf(": %.*s", tok.len - 1, tok.com);
 			break;
 	}
-	putchar('\n');
 }
+
+void token_println(token tok) { token_print(tok); putchar('\n'); }

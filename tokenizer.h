@@ -14,13 +14,21 @@
 #define LSFMT "%.*s"
 #define LSARG(s) s.len, s.data
 
+typedef struct lenstring lenstring;
 typedef struct tokenizer tokenizer;
 typedef struct token     token;
 
+const char *token_name(int type);
 token tokenizer_get_next (tokenizer *tk);
 void token_print(token tok);
+void token_println(token tok);
 
 enum {TOKEN_NONE, TOKEN_SYM, TOKEN_NUM, TOKEN_ERR, TOKEN_COL, TOKEN_COM, TOKEN_EOI, TOKEN_CMT};
+
+struct lenstring {
+	const char *data;
+	int len;
+};
 
 struct token {
 	int type;
