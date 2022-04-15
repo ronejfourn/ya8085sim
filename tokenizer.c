@@ -1,8 +1,7 @@
 #include "tokenizer.h"
 #include "lenstring.h"
+#include "fmtstr.h"
 #include <stdio.h>
-
-// TODO: use formatted strings to for error
 
 token tokenizer_get_next(tokenizer *tk){
 	token tok;
@@ -59,10 +58,12 @@ token tokenizer_get_next(tokenizer *tk){
 		} else if (!is_decimal) {
 			tok.type = TOKEN_ERR;
 			tok.err  = "expected decimal number";
+			tok.len  = strlen(tok.err);
 		}
 		if (tok.num > 0xFFFF) {
 			tok.type = TOKEN_ERR;
 			tok.err  = "number out of range";
+			tok.len  = strlen(tok.err);
 		}
 		return tok;
 	}
@@ -85,7 +86,7 @@ token tokenizer_get_next(tokenizer *tk){
 
 	if (*tk->data == ';') {
 		tok.type = TOKEN_CMT;
-		tok.com  = tk->data + 1;
+		tok.cmt  = tk->data + 1;
 		while (!IS_NEWLINE(*tk->data) && *tk->data) {
 			tk->data ++;
 			tok.len ++;
@@ -109,20 +110,35 @@ token tokenizer_get_next(tokenizer *tk){
 
 	tok.type = TOKEN_ERR;
 	tok.err  = "bad character";
+	tok.len  = strlen(tok.err);
 	return tok;
 }
 
-const char *token_name(int type) {
+char *token_name(int type) {
 	switch (type) {
 		case TOKEN_NONE: return "none";
 		case TOKEN_SYM : return "symbol";
 		case TOKEN_NUM : return "number";
 		case TOKEN_ERR : return "error";
-		case TOKEN_EOI : return "EOI";
+		case TOKEN_EOI : return "end of instruction";
 		case TOKEN_COL : return "colon";
 		case TOKEN_COM : return "comma";
 		case TOKEN_CMT : return "comment";
 		default: return "unknown";
+	}
+}
+
+char *token_val_str(token t) {
+	switch (t.type) {
+		case TOKEN_NONE: return fmtstr("");
+		case TOKEN_SYM : return fmtstr("%.*s", t.len, t.sym);
+		case TOKEN_NUM : return fmtstr("%0xh", t.num);
+		case TOKEN_ERR : return fmtstr("%.*s", t.len, t.err);
+		case TOKEN_EOI : return fmtstr("end of instruction");
+		case TOKEN_COL : return fmtstr("':'");
+		case TOKEN_COM : return fmtstr("','");
+		case TOKEN_CMT : return fmtstr("%.*s", t.len, t.cmt);
+		default: return fmtstr("unknown");
 	}
 }
 
@@ -139,7 +155,7 @@ void token_print(token tok) {
 			printf(": %s", tok.err);
 			break;
 		case TOKEN_CMT:
-			printf(": %.*s", tok.len - 1, tok.com);
+			printf(": %.*s", tok.len - 1, tok.cmt);
 			break;
 	}
 }

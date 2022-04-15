@@ -31,17 +31,20 @@ int main(int argc, char **argv) {
 
 	instruction_table_init();
 	partial_instruction_table_init();
-	const char *msg;
+	char *msg;
 
 	while (*tk.data) {
 		token r = tokenizer_get_next(&tk);
-		token_println(r);
+		/* token_println(r); */
 		if (r.type == TOKEN_ERR)
 			break;
-		msg = load_instruction((lenstring){r.sym, r.len}, &tk);
-		if (msg) {
-			printf("%s\n", msg);
-			/* break; */
+		if (r.type == TOKEN_SYM) {
+			msg = load_instruction((lenstring){r.sym, r.len}, &tk);
+			if (msg) {
+				printf("%s\n", msg);
+				free(msg);
+				/* break; */
+			}
 		}
 	}
 

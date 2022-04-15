@@ -1,6 +1,7 @@
 #include "tokenizer.h"
 #include "memory.h"
 #include "tables.h"
+#include "fmtstr.h"
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -9,31 +10,33 @@
 static unsigned char memory[0x10000];
 static int loadat;
 
-// TODO: CLEAN THINGS UP
-
-// TODO: use formatted strings to return error
-
 static int inc_loadat() {
 	int p  = loadat;
 	loadat = (loadat + 1) & 0xFFFF;
 	return p;
 }
 
-const char *load_instruction_opcode(lenstring n, tokenizer *tk) {
+char *load_instruction_opcode(lenstring n, tokenizer *tk) {
 	int64_t i = (int64_t)instruction_table_get(n);
 
 	if (i != -1)
 		memory[inc_loadat()] = i;
 	else
-		return "bad key";
+		return fmtstr("at [%i:%i] bad token, got %.*s",
+				tk->row, tk->col, n.len, n.data);
 
 	token a = tokenizer_get_next(tk);
-	if (a.type != TOKEN_EOI && a.type != TOKEN_CMT)
-		return "expected end of instruction";
+	if (a.type != TOKEN_EOI && a.type != TOKEN_CMT) {
+		char *v = token_val_str(a);
+		char *m = fmtstr("at [%i:%i] expected %s or %s, got (%s) %s", a.row, a.col,
+				token_name(TOKEN_EOI), token_name(TOKEN_CMT), token_name(a.type), v);
+		free(v);
+		return m;
+	}
 	return NULL;
 }
 
-const char *load_instruction(lenstring n, tokenizer *tk) {
+char *load_instruction(lenstring n, tokenizer *tk) {
 	int64_t c = (int64_t)partial_instruction_table_get(n);
 	return (c != -1) ?
 		((loader)c)(n, tk) :
@@ -41,35 +44,51 @@ const char *load_instruction(lenstring n, tokenizer *tk) {
 }
 
 /* "MOV" */
-const char *load_instruction_mov(lenstring n, tokenizer *tk) {
+char *load_instruction_mov(lenstring n, tokenizer *tk) {
 	char k[10] = "MOV ";
 
 	token a = tokenizer_get_next(tk);
-	if (a.type != TOKEN_SYM)
-		return "expected one of 'A', 'B', 'C', 'D', 'E', 'H', 'L' or 'M'";
+	if (a.type != TOKEN_SYM) {
+		char *v = token_val_str(a);
+		char *m = fmtstr("at [%i:%i] expected one of 'A', 'B', 'C', 'D', 'E', 'H', 'L' or 'M', got (%s) %s",
+				a.row, a.col, token_name(a.type), v);
+		free(v);
+		return m;
+	}
 	if (a.len != 1)
-		return "expected one of 'A', 'B', 'C', 'D', 'E', 'H', 'L' or 'M'";
+		return fmtstr("at [%i:%i] expected one of 'A', 'B', 'C', 'D', 'E', 'H', 'L' or 'M', got %.*s",
+				a.row, a.col, a.len, a.sym);
 
 	char p = TO_UCASE(a.sym[0]);
 	if (p != 'A' && p != 'B' && p != 'C' && p != 'D' &&
 		p != 'E' && p != 'H' && p != 'L' && p != 'M')
-		return "expected one of 'A', 'B', 'C', 'D', 'E', 'H', 'L' or 'M'";
+		return fmtstr("at [%i:%i] expected one of 'A', 'B', 'C', 'D', 'E', 'H', 'L' or 'M', got %.*s",
+				a.row, a.col, a.len, a.sym);
 	k[4] = p;
 
 	a = tokenizer_get_next(tk);
-	if (a.type != TOKEN_COM)
-		return "expected ','";
+	if (a.type != TOKEN_COM) {
+		char *v = token_val_str(a);
+		char *m = fmtstr("at [%i:%i] expected ',', got (%s) %s",
+				a.row, a.col, token_name(a.type), v);
+		free(v);
+		return m;
+	}
 	k[5] = ',';
 
 	a = tokenizer_get_next(tk);
 	if (a.type != TOKEN_SYM)
 		return (p == 'M') ?
-			"expected one of 'A', 'B', 'C', 'D', 'E', 'H' or 'L'" :
-			"expected one of 'A', 'B', 'C', 'D', 'E', 'H', 'L' or 'M'";
+			fmtstr("at [%i:%i] expected one of 'A', 'B', 'C', 'D', 'E', 'H' or 'L', got %.*s",
+							a.row, a.col, a.len, a.sym):
+			fmtstr("at [%i:%i] expected one of 'A', 'B', 'C', 'D', 'E', 'H', 'L' or 'M', got %.*s",
+							a.row, a.col, a.len, a.sym);
 	if (a.len != 1)
 		return (p == 'M') ?
-			"expected one of 'A', 'B', 'C', 'D', 'E', 'H' or 'L'" :
-			"expected one of 'A', 'B', 'C', 'D', 'E', 'H', 'L' or 'M'";
+			fmtstr("at [%i:%i] expected one of 'A', 'B', 'C', 'D', 'E', 'H' or 'L', got %.*s",
+							a.row, a.col, a.len, a.sym):
+			fmtstr("at [%i:%i] expected one of 'A', 'B', 'C', 'D', 'E', 'H', 'L' or 'M', got %.*s",
+							a.row, a.col, a.len, a.sym);
 
 	char l = TO_UCASE(a.sym[0]);
 	if ((l == 'A') || (l == 'B') || (l == 'C') ||
@@ -78,8 +97,10 @@ const char *load_instruction_mov(lenstring n, tokenizer *tk) {
 		k[6] = l;
 	else
 		return (l == 'M' && p == 'M') ?
-			"MOV M,M is not a valid instruction":
-			"expected one of 'A', 'B', 'C', 'D', 'E', 'H', 'L' or 'M'";
+			fmtstr("at [%i:%i] MOV M,M is not a valid instruction",
+							a.row, a.col):
+			fmtstr("at [%i:%i] expected one of 'A', 'B', 'C', 'D', 'E', 'H', 'L' or 'M', got %.*s",
+							a.row, a.col, a.len, a.sym);
 
 	lenstring key;
 	key.data = k;
@@ -88,35 +109,53 @@ const char *load_instruction_mov(lenstring n, tokenizer *tk) {
 }
 
 /* "MVI" */
-const char *load_instruction_mvi(lenstring n, tokenizer *tk) {
+char *load_instruction_mvi(lenstring n, tokenizer *tk) {
 	char k[10] = "MVI ";
 
 	token a = tokenizer_get_next(tk);
-	if (a.type != TOKEN_SYM)
-		return "expected one of 'A', 'B', 'C', 'D', 'E', 'H', 'L' or 'M'";
+	if (a.type != TOKEN_SYM) {
+		char *v = token_val_str(a);
+		char *m = fmtstr("at [%i:%i] expected one of 'A', 'B', 'C', 'D', 'E', 'H', 'L' or 'M', got (%s) %s",
+				a.row, a.col, token_name(a.type), v);
+		free(v);
+		return m;
+	}
 	if (a.len != 1)
-		return "expected one of 'A', 'B', 'C', 'D', 'E', 'H', 'L' or 'M'";
+		return fmtstr("at [%i:%i] expected one of 'A', 'B', 'C', 'D', 'E', 'H', 'L' or 'M', got %.*s",
+				a.row, a.col, a.len, a.sym);
 
 	char p = TO_UCASE(a.sym[0]);
 	if (p != 'A' && p != 'B' && p != 'C' && p != 'D' &&
 		p != 'E' && p != 'H' && p != 'L' && p != 'M')
-		return "expected one of 'A', 'B', 'C', 'D', 'E', 'H', 'L' or 'M'";
+		return fmtstr("at [%i:%i] expected one of 'A', 'B', 'C', 'D', 'E', 'H', 'L' or 'M', got %.*s",
+				a.row, a.col, a.len, a.sym);
 	k[4] = p;
 
 	a = tokenizer_get_next(tk);
-	if (a.type != TOKEN_COM)
-		return "expected ','";
+	if (a.type != TOKEN_COM) {
+		char *v = token_val_str(a);
+		char *m = fmtstr("at [%i:%i] expected ',', got (%s) %s",
+				a.row, a.col, token_name(a.type), v);
+		free(v);
+		return m;
+	}
 
 	a = tokenizer_get_next(tk);
-	if (a.type != TOKEN_NUM)
-		return "expected 8-bit number (00h - 0xFFh)";
+	if (a.type != TOKEN_NUM) {
+		char *v = token_val_str(a);
+		char *m = fmtstr("at [%i:%i] expected 8-bit number (00h - 0ffh), got (%s) %s",
+				a.row, a.col, token_name(a.type), v);
+		free(v);
+		return m;
+	}
 	if (a.num  > 0xFF)
-		return "expected 8-bit number (00h - 0xFFh)";
+		return fmtstr("at [%i:%i] expected 8-bit number (00h - 0ffh), got %0xh",
+				a.row, a.col, a.num);
 
 	lenstring key;
 	key.data = k;
 	key.len  = strlen(k);
-	const char *msg = load_instruction_opcode(key, tk);
+	char *msg = load_instruction_opcode(key, tk);
 	if (msg) return msg;
 
 	memory[inc_loadat()] = a.num;
@@ -125,27 +164,35 @@ const char *load_instruction_mvi(lenstring n, tokenizer *tk) {
 }
 
 /* "LXI" */
-const char *load_instruction_lxi(lenstring n, tokenizer *tk) {
+char *load_instruction_lxi(lenstring n, tokenizer *tk) {
 	char k[10] = "LXI ";
 
 	token a = tokenizer_get_next(tk);
-	if (a.type != TOKEN_SYM)
-		return "expected one of 'B', 'D', 'H' or 'SP'";
+	if (a.type != TOKEN_SYM) {
+		char *v = token_val_str(a);
+		char *m = fmtstr("at [%i:%i] expected one of 'B', 'D', 'H', or 'SP', got (%s) %s",
+				a.row, a.col, token_name(a.type), v);
+		free(v);
+		return m;
+	}
 
 	if (a.len == 1) {
 		char p = TO_UCASE(a.sym[0]);
 		if (p != 'B' && p != 'D' && p != 'H')
-			return "expected one of 'B', 'D', 'H' or 'SP'";
+			return fmtstr("at [%i:%i] expected one of 'B', 'D', 'H', or 'SP', got %.*s",
+					a.row, a.col, a.len, a.sym);
 		k[4] = p;
 	} else if (a.len == 2) {
 		char p0 = TO_UCASE(a.sym[0]);
 		char p1 = TO_UCASE(a.sym[1]);
 		if (p0 != 'S' || p1 != 'P')
-			return "expected one of 'B', 'D', 'H' or 'SP'";
+			return fmtstr("at [%i:%i] expected one of 'B', 'D', 'H', or 'SP', got %.*s",
+					a.row, a.col, a.len, a.sym);
 		k[4] = p0;
 		k[5] = p1;
 	} else {
-		return "expected one of 'B', 'D', 'H' or 'SP'";
+		return fmtstr("at [%i:%i] expected one of 'B', 'D', 'H', or 'SP', got %.*s",
+				a.row, a.col, a.len, a.sym);
 	}
 
 	a = tokenizer_get_next(tk);
@@ -153,15 +200,21 @@ const char *load_instruction_lxi(lenstring n, tokenizer *tk) {
 		return "expected ','";
 
 	a = tokenizer_get_next(tk);
-	if (a.type != TOKEN_NUM) // TODO: labels are also allowed here
-		return "expected 16-bit number (0000h - FFFFh)";
+	if (a.type != TOKEN_NUM) {  // TODO: labels are also allowed here
+		char *v = token_val_str(a);
+		char *m = fmtstr("at [%i:%i] expected 16-bit number (0000h - 0ffffh), got (%s) %s",
+				a.row, a.col, token_name(a.type), v);
+		free(v);
+		return m;
+	}
 	if (a.num  > 0xFFFF)
-		return "expected 16-bit number (0000h - FFFFh)";
+		return fmtstr("at [%i:%i] expected 16-bit number (0000h - 0ffffh), got %0xh",
+				a.row, a.col, a.num);
 
 	lenstring key;
 	key.data = k;
 	key.len  = strlen(k);
-	const char *msg = load_instruction_opcode(key, tk);
+	char *msg = load_instruction_opcode(key, tk);
 	if (msg) return msg;
 
 	memory[inc_loadat()] = (a.num >> 0) & 0xFF;
@@ -171,7 +224,7 @@ const char *load_instruction_lxi(lenstring n, tokenizer *tk) {
 }
 
 /* "LDAX" */ /* "STAX" */
-const char *load_instruction_ldax_stax(lenstring n, tokenizer *tk) {
+char *load_instruction_ldax_stax(lenstring n, tokenizer *tk) {
 	char k[10] = {0};
 
 	int i = 0;
@@ -180,14 +233,21 @@ const char *load_instruction_ldax_stax(lenstring n, tokenizer *tk) {
 	k[i++] = ' ';
 
 	token a = tokenizer_get_next(tk);
-	if (a.type != TOKEN_SYM)
-		return "expected 'B' or 'D'";
+	if (a.type != TOKEN_SYM) {
+		char *v = token_val_str(a);
+		char *m = fmtstr("at [%i:%i] expected one of 'B' or 'D', got (%s) %s",
+				a.row, a.col, token_name(a.type), v);
+		free(v);
+		return m;
+	}
 	if (a.len != 1)
-		return "expected 'B' or 'D'";
+		return fmtstr("at [%i:%i] expected one of 'B' or 'D', got %.*s",
+				a.row, a.col, a.len, a.sym);
 
 	char p = TO_UCASE(a.sym[0]);
 	if (p != 'B' && p != 'D')
-		return "expected 'B' or 'D'";
+		return fmtstr("at [%i:%i] expected one of 'B' or 'D', got %.*s",
+				a.row, a.col, a.len, a.sym);
 	k[i++] = p;
 
 	lenstring key;
@@ -197,7 +257,7 @@ const char *load_instruction_ldax_stax(lenstring n, tokenizer *tk) {
 }
 
 /* "PUSH" */ /* "POP"  */
-const char *load_instruction_push_pop(lenstring n, tokenizer *tk) {
+char *load_instruction_push_pop(lenstring n, tokenizer *tk) {
 	char k[10] = {0};
 
 	int i = 0;
@@ -206,25 +266,33 @@ const char *load_instruction_push_pop(lenstring n, tokenizer *tk) {
 	k[i++] = ' ';
 
 	token a = tokenizer_get_next(tk);
-	if (a.type != TOKEN_SYM)
-		return "expected one of 'B', 'D', 'H' or 'PSW'";
+	if (a.type != TOKEN_SYM) {
+		char *v = token_val_str(a);
+		char *m = fmtstr("at [%i:%i] expected one of 'B', 'D', 'H' or 'PSW', got (%s) %s",
+				a.row, a.col, token_name(a.type), v);
+		free(v);
+		return m;
+	}
 
 	if (a.len == 1) {
 		char p = TO_UCASE(a.sym[0]);
 		if (p != 'B' && p != 'D' && p != 'H')
-			return "expected one of 'B', 'D', 'H' or 'PSW'";
+			return fmtstr("at [%i:%i] expected one of 'B', 'D', 'H' or 'PSW', got %.*s",
+					a.row, a.col, a.len, a.sym);
 		k[i++] = p;
 	} else if (a.len == 3) {
 		char p0 = TO_UCASE(a.sym[0]);
 		char p1 = TO_UCASE(a.sym[1]);
 		char p2 = TO_UCASE(a.sym[2]);
 		if (p0 != 'P' || p1 != 'S' || p2 != 'W')
-			return "expected one of 'B', 'D', 'H' or 'PSW'";
+			return fmtstr("at [%i:%i] expected one of 'B', 'D', 'H' or 'PSW', got %.*s",
+					a.row, a.col, a.len, a.sym);
 		k[i++] = p0;
 		k[i++] = p1;
 		k[i++] = p2;
 	} else {
-		return "expected one of 'B', 'D', 'H' or 'PSW'";
+		return fmtstr("at [%i:%i] expected one of 'B', 'D', 'H' or 'PSW', got %.*s",
+				a.row, a.col, a.len, a.sym);
 	}
 
 	lenstring key;
@@ -235,7 +303,7 @@ const char *load_instruction_push_pop(lenstring n, tokenizer *tk) {
 
 /* "ADD" */ /* "ADC" */ /* "SUB" */ /* "SBB" */ /* "INR" */
 /* "DCR" */ /* "ANA" */ /* "XRA" */ /* "ORA" */ /* "CMP" */
-const char *load_instruction_arith_reg(lenstring n, tokenizer *tk) {
+char *load_instruction_arith_reg(lenstring n, tokenizer *tk) {
 	char k[10] = {0};
 
 	int i = 0;
@@ -244,15 +312,22 @@ const char *load_instruction_arith_reg(lenstring n, tokenizer *tk) {
 	k[i++] = ' ';
 
 	token a = tokenizer_get_next(tk);
-	if (a.type != TOKEN_SYM)
-		return "expected one of 'A', 'B', 'C', 'D', 'E', 'H', 'L' or 'M'";
+	if (a.type != TOKEN_SYM) {
+		char *v = token_val_str(a);
+		char *m = fmtstr("at [%i:%i] expected one of 'A', 'B', 'C', 'D', 'E', 'H', 'L' or 'M', got (%s) %s",
+				a.row, a.col, token_name(a.type), v);
+		free(v);
+		return m;
+	}
 	if (a.len != 1)
-		return "expected one of 'A', 'B', 'C', 'D', 'E', 'H', 'L' or 'M'";
+		return fmtstr("at [%i:%i] expected one of 'A', 'B', 'C', 'D', 'E', 'H', 'L' or 'M', got %.*s",
+				a.row, a.col, a.len, a.sym);
 
 	char p = TO_UCASE(a.sym[0]);
 	if (p != 'A' && p != 'B' && p != 'C' && p != 'D' &&
 		p != 'E' && p != 'H' && p != 'L' && p != 'M')
-		return "expected one of 'A', 'B', 'C', 'D', 'E', 'H', 'L' or 'M'";
+		return fmtstr("at [%i:%i] expected one of 'A', 'B', 'C', 'D', 'E', 'H', 'L' or 'M', got %.*s",
+				a.row, a.col, a.len, a.sym);
 	k[i++] = p;
 
 	lenstring key;
@@ -262,7 +337,7 @@ const char *load_instruction_arith_reg(lenstring n, tokenizer *tk) {
 }
 
 /* "DAD" */ /* "INX" */ /* "DCX" */
-const char *load_instruction_arith_rp(lenstring n, tokenizer *tk) {
+char *load_instruction_arith_rp(lenstring n, tokenizer *tk) {
 	char k[10] = {0};
 
 	int i = 0;
@@ -271,14 +346,21 @@ const char *load_instruction_arith_rp(lenstring n, tokenizer *tk) {
 	k[i++] = ' ';
 
 	token a = tokenizer_get_next(tk);
-	if (a.type != TOKEN_SYM)
-		return "expected 'B', 'D' or 'H'";
+	if (a.type != TOKEN_SYM) {
+		char *v = token_val_str(a);
+		char *m = fmtstr("at [%i:%i] expected one of 'B', 'D' or 'H', got (%s) %s",
+				a.row, a.col, token_name(a.type), v);
+		free(v);
+		return m;
+	}
 	if (a.len != 1)
-		return "expected 'B', 'D' or 'H'";
+		return fmtstr("at [%i:%i] expected one of 'B', 'D' or 'H', got %.*s",
+				a.row, a.col, a.len, a.sym);
 
 	char p = TO_UCASE(a.sym[0]);
 	if (p != 'B' && p != 'D' && p != 'H')
-		return "expected 'B', 'D' or 'H'";
+		return fmtstr("at [%i:%i] expected one of 'B', 'D' or 'H', got %.*s",
+				a.row, a.col, a.len, a.sym);
 	k[i++] = p;
 
 	lenstring key;
@@ -290,21 +372,27 @@ const char *load_instruction_arith_rp(lenstring n, tokenizer *tk) {
 /* "ADI" */ /* "ACI" */ /* "SUI" */ /* "SBI" */
 /* "ANI" */ /* "XRI" */ /* "ORI" */ /* "CPI" */
 /* "IN"  */ /* "OUT" */
-const char *load_instruction_imm_w(lenstring n, tokenizer *tk) {
+char *load_instruction_imm_w(lenstring n, tokenizer *tk) {
 	char k[10] = {0};
 	for (int i = 0; i < n.len; i ++)
 		k[i] = n.data[i];
 
 	token a = tokenizer_get_next(tk);
-	if (a.type != TOKEN_NUM)
-		return "expected 8-bit number (00h - 0xFFh)";
+	if (a.type != TOKEN_NUM) {
+		char *v = token_val_str(a);
+		char *m = fmtstr("at [%i:%i] expected 8-bit number (00h - 0ffh), got (%s) %s",
+				a.row, a.col, token_name(a.type), v);
+		free(v);
+		return m;
+	}
 	if (a.num  > 0xFF)
-		return "expected 8-bit number (00h - 0xFFh)";
+		return fmtstr("at [%i:%i] expected 8-bit number (00h - 0ffh), got %0xh",
+				a.row, a.col, a.num);
 
 	lenstring key;
 	key.data = k;
 	key.len  = strlen(k);
-	const char *msg = load_instruction_opcode(key, tk);
+	char *msg = load_instruction_opcode(key, tk);
 	if (msg) return msg;
 
 	memory[inc_loadat()] = a.num;
@@ -322,16 +410,22 @@ const char *load_instruction_imm_w(lenstring n, tokenizer *tk) {
 /* "RET"  */
 /* "RNZ"  */ /* "RZ"   */ /* "RNC"  */ /* "RC"  */
 /* "RPO"  */ /* "RPE"  */ /* "RP"   */ /* "RM"  */
-const char *load_instruction_imm_dw(lenstring n, tokenizer *tk) {
+char *load_instruction_imm_dw(lenstring n, tokenizer *tk) {
 	char k[10] = {0};
 	for (int i = 0; i < n.len; i ++)
 		k[i] = n.data[i];
 
 	token a = tokenizer_get_next(tk);
-	if (a.type != TOKEN_NUM) // TODO: labels are also allowed here
-		return "expected 16-bit number (0000h - FFFFh)";
+	if (a.type != TOKEN_NUM) { // TODO: labels are also allowed here
+		char *v = token_val_str(a);
+		char *m = fmtstr("at [%i:%i] expected 16-bit number (0000h - 0ffffh), got (%s) %s",
+				a.row, a.col, token_name(a.type), v);
+		free(v);
+		return m;
+	}
 	if (a.num  > 0xFFFF)
-		return "expected 16-bit number (0000h - FFFFh)";
+		return fmtstr("at [%i:%i] expected 16-bit number (0000h - 0ffffh), got %0xh",
+				a.row, a.col, a.num);
 
 	lenstring key;
 	key.data = k;
@@ -345,14 +439,20 @@ const char *load_instruction_imm_dw(lenstring n, tokenizer *tk) {
 }
 
 /* "RST" */
-const char *load_instruction_rst(lenstring n, tokenizer *tk) {
+char *load_instruction_rst(lenstring n, tokenizer *tk) {
 	char k[10] = "RST ";
 
 	token a = tokenizer_get_next(tk);
-	if (a.type != TOKEN_NUM)
-		return "expected number number in range [0 - 7]";
+	if (a.type != TOKEN_NUM) {
+		char *v = token_val_str(a);
+		char *m = fmtstr("at [%i:%i] expected number in range [0 - 7], got (%s) %s",
+				a.row, a.col, token_name(a.type), v);
+		free(v);
+		return m;
+	}
 	if (a.num  > 7)
-		return "expected number number in range [0 - 7]";
+		return fmtstr("at [%i:%i] expected number in range [0 - 7], got %0x",
+				a.row, a.col, a.num);
 	k[4] = a.num + '0';
 
 	lenstring key;
