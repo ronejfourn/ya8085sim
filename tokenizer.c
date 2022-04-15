@@ -1,4 +1,5 @@
 #include "tokenizer.h"
+#include "lenstring.h"
 #include <stdio.h>
 
 // TODO: use formatted strings to for error

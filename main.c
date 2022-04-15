@@ -1,11 +1,8 @@
 #include "tokenizer.h"
 #include "memory.h"
+#include "tables.h"
 #include <stdio.h>
 #include <stdlib.h>
-
-unsigned char memory[0x10000];
-int  loadat;
-extern hash_table *pitable;
 
 int main(int argc, char **argv) {
 	if (argc != 2) {
@@ -34,21 +31,17 @@ int main(int argc, char **argv) {
 
 	instruction_table_init();
 	partial_instruction_table_init();
+	const char *msg;
 
 	while (*tk.data) {
 		token r = tokenizer_get_next(&tk);
 		token_println(r);
 		if (r.type == TOKEN_ERR)
 			break;
-		int64_t c = (int64_t)hash_table_get(pitable, (lenstring){r.sym, r.len});
-		if (c != -1) {
-			((loader)c)((lenstring){r.sym, r.len}, &tk);
-		} else {
-			const char *msg = load_instruction_opcode((lenstring){r.sym, r.len}, &tk);
-			if (msg) {
-				printf("%s\n", msg);
-				break;
-			}
+		msg = load_instruction((lenstring){r.sym, r.len}, &tk);
+		if (msg) {
+			printf("%s\n", msg);
+			/* break; */
 		}
 	}
 
