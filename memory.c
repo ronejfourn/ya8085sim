@@ -7,14 +7,8 @@
 #include <stdlib.h>
 #include <string.h>
 
-static unsigned char memory[0x10000];
-static int loadat;
-
-static int inc_loadat() {
-	int p  = loadat;
-	loadat = (loadat + 1) & 0xFFFF;
-	return p;
-}
+static uint8_t  memory[0x10000];
+static uint16_t loadat;
 
 struct {
 	int count, cap;
@@ -24,7 +18,7 @@ struct {
 	} *data;
 } sq;
 
-int get_mem(int i) {return memory[i];}
+uint8_t *get_mem(){return memory;}
 int get_loadat() {return loadat;}
 
 void symbol_queue_init() {
@@ -63,7 +57,7 @@ char *load_instruction_opcode(lenstring n, tokenizer *tk) {
 	int64_t i = (int64_t)instruction_table_get(n);
 
 	if (i != -1)
-		memory[inc_loadat()] = i & 0xFF;
+		memory[loadat++] = i & 0xFF;
 	else
 		return fmtstr("at [%i:%i] bad token, got %.*s",
 				tk->row, tk->col, n.len, n.data);
@@ -194,7 +188,7 @@ char *load_instruction_mvi(lenstring n, tokenizer *tk) {
 	char *msg = load_instruction_opcode(ls_from_cstr(k), tk);
 	if (msg) return msg;
 
-	memory[inc_loadat()] = a.num & 0xFF;
+	memory[loadat++] = a.num & 0xFF;
 
 	return NULL;
 }
@@ -242,12 +236,12 @@ char *load_instruction_lxi(lenstring n, tokenizer *tk) {
 
 		int64_t p = (int64_t)symbol_table_get((lenstring) {a.sym, a.len});
 		if (p != -1) {
-			memory[inc_loadat()] = (p >> 0) & 0xFF;
-			memory[inc_loadat()] = (p >> 8) & 0xFF;
+			memory[loadat++] = (p >> 0) & 0xFF;
+			memory[loadat++] = (p >> 8) & 0xFF;
 		} else {
 			symbol_queue(a);
-			inc_loadat();
-			inc_loadat();
+			loadat++;
+			loadat++;
 		}
 	} else if (a.type == TOKEN_NUM) {
 		char *msg = load_instruction_opcode(ls_from_cstr(k), tk);
@@ -257,8 +251,8 @@ char *load_instruction_lxi(lenstring n, tokenizer *tk) {
 			return fmtstr("at [%i:%i] expected 16-bit number (0000h - 0ffffh), got %0xh",
 					a.row, a.col, a.num);
 
-		memory[inc_loadat()] = (a.num >> 0) & 0xFF;
-		memory[inc_loadat()] = (a.num >> 8) & 0xFF;
+		memory[loadat++] = (a.num >> 0) & 0xFF;
+		memory[loadat++] = (a.num >> 8) & 0xFF;
 	} else {
 		char *v = token_val_str(a);
 		char *m = fmtstr("at [%i:%i] expected 16-bit number (0000h - 0ffffh) or label, got (%s) %s",
@@ -386,20 +380,30 @@ char *load_instruction_arith_rp(lenstring n, tokenizer *tk) {
 	token a = tokenizer_get_next(tk);
 	if (a.type != TOKEN_SYM) {
 		char *v = token_val_str(a);
-		char *m = fmtstr("at [%i:%i] expected one of 'B', 'D' or 'H', got (%s) %s",
+		char *m = fmtstr("at [%i:%i] expected one of 'B', 'D', 'H', or 'SP', got (%s) %s",
 				a.row, a.col, token_name(a.type), v);
 		free(v);
 		return m;
 	}
-	if (a.len != 1)
-		return fmtstr("at [%i:%i] expected one of 'B', 'D' or 'H', got %.*s",
-				a.row, a.col, a.len, a.sym);
 
-	char p = TO_UCASE(a.sym[0]);
-	if (p != 'B' && p != 'D' && p != 'H')
-		return fmtstr("at [%i:%i] expected one of 'B', 'D' or 'H', got %.*s",
+	if (a.len == 1) {
+		char p = TO_UCASE(a.sym[0]);
+		if (p != 'B' && p != 'D' && p != 'H')
+			return fmtstr("at [%i:%i] expected one of 'B', 'D', 'H', or 'SP', got %.*s",
+					a.row, a.col, a.len, a.sym);
+		k[i++] = p;
+	} else if (a.len == 2) {
+		char p0 = TO_UCASE(a.sym[0]);
+		char p1 = TO_UCASE(a.sym[1]);
+		if (p0 != 'S' || p1 != 'P')
+			return fmtstr("at [%i:%i] expected one of 'B', 'D', 'H', or 'SP', got %.*s",
+					a.row, a.col, a.len, a.sym);
+		k[i++] = p0;
+		k[i++] = p1;
+	} else {
+		return fmtstr("at [%i:%i] expected one of 'B', 'D', 'H', or 'SP', got %.*s",
 				a.row, a.col, a.len, a.sym);
-	k[i++] = p;
+	}
 
 	return load_instruction_opcode(ls_from_cstr(k), tk);
 }
@@ -427,7 +431,7 @@ char *load_instruction_imm_w(lenstring n, tokenizer *tk) {
 	char *msg = load_instruction_opcode(ls_from_cstr(k), tk);
 	if (msg) return msg;
 
-	memory[inc_loadat()] = a.num & 0xFF;
+	memory[loadat++] = a.num & 0xFF;
 
 	return NULL;
 }
@@ -454,12 +458,12 @@ char *load_instruction_imm_dw(lenstring n, tokenizer *tk) {
 
 		int64_t p = (int64_t)symbol_table_get((lenstring) {a.sym, a.len});
 		if (p != -1) {
-			memory[inc_loadat()] = (p >> 0) & 0xFF;
-			memory[inc_loadat()] = (p >> 8) & 0xFF;
+			memory[loadat++] = (p >> 0) & 0xFF;
+			memory[loadat++] = (p >> 8) & 0xFF;
 		} else {
 			symbol_queue(a);
-			inc_loadat();
-			inc_loadat();
+			loadat++;
+			loadat++;
 		}
 	} else if (a.type == TOKEN_NUM) {
 		char *msg = load_instruction_opcode(ls_from_cstr(k), tk);
@@ -469,8 +473,8 @@ char *load_instruction_imm_dw(lenstring n, tokenizer *tk) {
 			return fmtstr("at [%i:%i] expected 16-bit number (0000h - 0ffffh), got %0xh",
 					a.row, a.col, a.num);
 
-		memory[inc_loadat()] = (a.num >> 0) & 0xFF;
-		memory[inc_loadat()] = (a.num >> 8) & 0xFF;
+		memory[loadat++] = (a.num >> 0) & 0xFF;
+		memory[loadat++] = (a.num >> 8) & 0xFF;
 	} else {
 		char *v = token_val_str(a);
 		char *m = fmtstr("at [%i:%i] expected 16-bit number (0000h - 0ffffh) or label, got (%s) %s",

@@ -1,3 +1,5 @@
+#pragma once
+#include <stdint.h>
 typedef struct tokenizer tokenizer;
 typedef struct lenstring lenstring;
 typedef struct hash_table hash_table;
@@ -5,7 +7,7 @@ typedef struct hash_table hash_table;
 typedef char *(*loader) (lenstring n, tokenizer* tk);
 
 int get_loadat();
-int get_mem(int i);
+uint8_t *get_mem();
 void symbol_queue_init();
 char *second_pass();
 char *load_instruction(lenstring n, tokenizer *tk);
