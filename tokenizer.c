@@ -114,6 +114,19 @@ token tokenizer_get_next(tokenizer *tk){
 	return tok;
 }
 
+lenstring tokenizer_get_next_line(tokenizer *tk){
+	lenstring ret;
+	ret.data = tk->data;
+	ret.len = 0;
+	while (!IS_NEWLINE(*tk->data) && *tk->data) {
+		ret.len ++;
+		tk->data ++;
+	}
+	tk->data += (*tk->data != 0);
+	tk->data += (*tk->data != 0) && (*tk->data == '\n');
+	return ret;
+}
+
 token tokenizer_peek_next(tokenizer *tk){
 	int r    = tk->row;
 	int c    = tk->col;

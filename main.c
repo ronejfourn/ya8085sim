@@ -22,6 +22,7 @@ enum {
 
 uint8_t registers[REG_COUNT];
 uint8_t IO[0x100];
+
 #define UPPER_BYTE_B registers[REG_B]
 #define UPPER_BYTE_D registers[REG_D]
 #define UPPER_BYTE_H registers[REG_H]
@@ -137,63 +138,82 @@ int main(int argc, char **argv) {
 	char *msg;
 	char first_pass_successful = 1;
 
+	uint8_t ibcount[0x10000]; // keep track of no. of bytes of instructions
+	int icount = 0;
+
+	set_loadat(0x4204);
+	char program_should_run = 1;
+	uint16_t PC = get_loadat();
+	uint16_t SP = 0xFFFF;
+	uint16_t WZ = 0x0000;
+	uint8_t *SPH = (uint8_t *)&SP;
+	uint8_t *SPL = (uint8_t *)&SP + 1;
+	uint8_t *memory = get_mem();
+
+	// first pass
+	// load instructions and calculate value of labels
 	while (*tk.data) {
 		token r = tokenizer_get_next(&tk);
 
 		if (r.type == TOKEN_ERR) {
 			first_pass_successful = 0;
-			printf("%s\n", r.err);
+			fprintf(stderr, "%s\n", r.err);
 			break;
 		}
 
 		if (r.type != TOKEN_SYM) {
 			first_pass_successful = 0;
-			printf("at [%i:%i] expected %s, got %s\n",
+			fprintf(stderr, "at [%i:%i] expected %s, got %s\n",
 					r.row, r.col, token_name(TOKEN_SYM), token_name(r.type));
 			break;
 		}
 
 		token a = tokenizer_peek_next(&tk);
 		if (a.type == TOKEN_COL) {
-			symbol_table_add((lenstring){r.sym, r.len}, get_loadat());
+			symbol_table_add((lenstring){r.sym, r.len}, get_load_pos());
 			tokenizer_get_next(&tk);
 		} else {
+			int prev = get_load_pos();
 			msg = load_instruction((lenstring){r.sym, r.len}, &tk);
 			if (msg) {
 				first_pass_successful = 0;
-				printf("%s\n", msg);
+				fprintf(stderr, "%s\n", msg);
 				free(msg);
 				break;
 			}
+			ibcount[icount ++] = get_load_pos() - prev;
 		}
 	}
 
+	// second pass
+	// resolve forward references
 	char second_pass_successful = first_pass_successful;
 	if (first_pass_successful) {
 		msg = second_pass();
 		if (msg) {
-			printf("%s\n", msg);
+			fprintf(stderr, "%s\n", msg);
 			free(msg);
 			second_pass_successful = 0;
 		}
 	}
 
-	set_loadat(0x4204);
-	char program_should_run = 1;
-	uint16_t AD = 0x0000;
-	uint16_t PC = get_loadat();
-	uint16_t SP = 0xFFFF;
-	uint8_t *SPH = (uint8_t *)&SP;
-	uint8_t *SPL = (uint8_t *)&SP + 1;
-	uint8_t TMP = 0x00;
-	uint8_t *memory = get_mem();
+	// print opcodes
+	tk.data = buf;
+	uint16_t indx = get_loadat();
+	for (int i = 0; i < icount && second_pass_successful; i++) {
+		lenstring ln = tokenizer_get_next_line(&tk);
+		printf("%.4XH | ", PC);
+		for (int j = 0; j < ibcount[i]; j ++)
+				printf("%.2X ", memory[PC++]);
+		printf("%*s| %.*s\n", 9 - ibcount[i] * 3, "", (int)ln.len, ln.data);
+	}
 
+	PC = get_loadat();
 	memory[0x2040] = 5;
 	uint8_t numbers[] = { 9, 3, 2, 4, 1 };
 	memcpy(memory + 0x2041, numbers, sizeof(numbers));
 
-	int asdf = 11;
-
+	// execution loop
 	while (second_pass_successful && program_should_run) {
 		switch (memory[PC]) {
 
@@ -224,12 +244,12 @@ int main(int argc, char **argv) {
 #undef POP
 
 		case XTHL:
-			TMP = registers[REG_L];
+			WZ = registers[REG_L];
 			registers[REG_L] = memory[SP];
-			memory[SP] = TMP;
-			TMP = registers[REG_H];
+			memory[SP] = WZ;
+			WZ = registers[REG_H];
 			registers[REG_H] = memory[SP + 1];
-			memory[SP + 1] = TMP;
+			memory[SP + 1] = WZ;
 			++PC; break;
 
 		case SPHL:
@@ -294,25 +314,25 @@ int main(int argc, char **argv) {
 			++PC; break;
 
 		case LHLD:
-			AD = (memory[PC + 1] & 0xFF) | ((memory[PC + 2] & 0xFF) << 8);
-			registers[REG_L] = memory[AD];
-			registers[REG_H] = memory[AD + 1];
+			WZ = (memory[PC + 1] & 0xFF) | ((memory[PC + 2] & 0xFF) << 8);
+			registers[REG_L] = memory[WZ];
+			registers[REG_H] = memory[WZ + 1];
 			PC += 3; break;
 
 		case SHLD:
-			AD = (memory[PC + 1] & 0xFF) | ((memory[PC + 2] & 0xFF) << 8);
-			memory[AD] = registers[REG_L];
-			memory[AD + 1] = registers[REG_H];
+			WZ = (memory[PC + 1] & 0xFF) | ((memory[PC + 2] & 0xFF) << 8);
+			memory[WZ] = registers[REG_L];
+			memory[WZ + 1] = registers[REG_H];
 			PC += 3; break;
 
 		case LDA:
-			AD = (memory[PC + 1] & 0xFF) | ((memory[PC + 2] & 0xFF) << 8);
-			registers[REG_A] = memory[AD];
+			WZ = (memory[PC + 1] & 0xFF) | ((memory[PC + 2] & 0xFF) << 8);
+			registers[REG_A] = memory[WZ];
 			PC += 3; break;
 
 		case STA:
-			AD = (memory[PC + 1] & 0xFF) | ((memory[PC + 2] & 0xFF) << 8);
-			memory[AD] = registers[REG_A];
+			WZ = (memory[PC + 1] & 0xFF) | ((memory[PC + 2] & 0xFF) << 8);
+			memory[WZ] = registers[REG_A];
 			PC += 3; break;
 
 #define LXI(rp) \
@@ -329,12 +349,12 @@ int main(int argc, char **argv) {
 #undef LXI
 
 		case XCHG:
-			TMP = registers[REG_L];
+			WZ = registers[REG_L];
 			registers[REG_L] = registers[REG_E];
-			registers[REG_E] = TMP;
-			TMP = registers[REG_H];
+			registers[REG_E] = WZ;
+			WZ = registers[REG_H];
 			registers[REG_H] = registers[REG_D];
-			registers[REG_D] = TMP;
+			registers[REG_D] = WZ;
 			++PC; break;
 
 #define ADD(x) \
@@ -777,7 +797,7 @@ int main(int argc, char **argv) {
 			++PC; break;
 
 		default:
-			printf("[FATAL] unexpected opcode %0x\n", memory[PC]);
+			fprintf(stderr, "[FATAL] unexpected opcode %0x\n", memory[PC]);
 			program_should_run = 0;
 			break;
 		}
