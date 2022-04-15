@@ -53,7 +53,7 @@ uint8_t IO[0x100];
 
 uint8_t ALU(uint8_t op1, uint8_t op2, char op, uint8_t cc) {
 	uint8_t res;
-	switch (cc) {
+	switch (op) {
 		case '-':
 			op2 = ~op2 + 1;
 		case '+':
@@ -66,19 +66,24 @@ uint8_t ALU(uint8_t op1, uint8_t op2, char op, uint8_t cc) {
 			res = op1 ^ op2; break;
 	}
 
-	if (cc) {
-		res == 0 ?
-			SET(registers[REG_F], FLAG_Z):
-			RESET(registers[REG_F], FLAG_Z);
-	}
+	res == 0 ?
+		SET(registers[REG_F], FLAG_Z):
+		RESET(registers[REG_F], FLAG_Z);
 
 	(res & 0x80) == 0 ?
-		RESET(registers[REG_F], FLAG_Z):
-		SET(registers[REG_F], FLAG_Z);
+		RESET(registers[REG_F], FLAG_S):
+		SET(registers[REG_F], FLAG_S);
 
-	(op1 + op2 > 0xff) ?
-		SET(registers[REG_F], FLAG_CY):
-		RESET(registers[REG_F], FLAG_CY);
+	if (cc) {
+		if (op == '-')
+			(op1 + op2 > 0xff) ?
+				RESET(registers[REG_F], FLAG_CY):
+				SET(registers[REG_F], FLAG_CY);
+		else if (op == '+')
+			(op1 + op2 > 0xff) ?
+				SET(registers[REG_F], FLAG_CY):
+				RESET(registers[REG_F], FLAG_CY);
+	}
 
 	uint8_t cpy = res;
 	uint8_t cnt = 0;
@@ -88,9 +93,14 @@ uint8_t ALU(uint8_t op1, uint8_t op2, char op, uint8_t cc) {
 		RESET(registers[REG_F], FLAG_P):
 		SET(registers[REG_F], FLAG_P);
 
-	((op1 & 0xF) + (op2 &0xF) > 0xF) ?
-		SET(registers[REG_F], FLAG_AC):
-		RESET(registers[REG_F], FLAG_AC);
+	if (op == '-')
+		((op1 & 0xf) + (op2 & 0xf) > 0xf) ?
+			SET(registers[REG_F], FLAG_AC):
+			RESET(registers[REG_F], FLAG_AC);
+	else if (op == '+')
+		((op1 & 0xf) + (op2 & 0xf) > 0xf) ?
+			RESET(registers[REG_F], FLAG_AC):
+			SET(registers[REG_F], FLAG_AC);
 
 	return res;
 }
@@ -126,6 +136,7 @@ int main(int argc, char **argv) {
 	tk.col = 0;
 	char *msg;
 	char first_pass_successful = 1;
+
 	while (*tk.data) {
 		token r = tokenizer_get_next(&tk);
 
@@ -167,14 +178,22 @@ int main(int argc, char **argv) {
 		}
 	}
 
+	set_loadat(0x4204);
 	char program_should_run = 1;
 	uint16_t AD = 0x0000;
-	uint16_t PC = 0x0000;
+	uint16_t PC = get_loadat();
 	uint16_t SP = 0xFFFF;
 	uint8_t *SPH = (uint8_t *)&SP;
 	uint8_t *SPL = (uint8_t *)&SP + 1;
 	uint8_t TMP = 0x00;
 	uint8_t *memory = get_mem();
+
+	memory[0x2040] = 5;
+	uint8_t numbers[] = { 9, 3, 2, 4, 1 };
+	memcpy(memory + 0x2041, numbers, sizeof(numbers));
+
+	int asdf = 11;
+
 	while (second_pass_successful && program_should_run) {
 		switch (memory[PC]) {
 
@@ -758,11 +777,10 @@ int main(int argc, char **argv) {
 			++PC; break;
 
 		default:
-			printf("BRUHBRUHBRUHBRUHBRUHBRUH\n");
+			printf("[FATAL] unexpected opcode %0x\n", memory[PC]);
+			program_should_run = 0;
 			break;
 		}
-
 	}
-
 	return 0;
 }

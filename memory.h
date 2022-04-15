@@ -7,6 +7,7 @@ typedef struct hash_table hash_table;
 typedef char *(*loader) (lenstring n, tokenizer* tk);
 
 int get_loadat();
+void set_loadat(uint16_t v);
 uint8_t *get_mem();
 void symbol_queue_init();
 char *second_pass();

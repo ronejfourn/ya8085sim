@@ -20,6 +20,7 @@ struct {
 
 uint8_t *get_mem(){return memory;}
 int get_loadat() {return loadat;}
+void set_loadat(uint16_t v) {loadat = v;}
 
 void symbol_queue_init() {
 	sq.data  = malloc(sizeof(*sq.data) * 8);
