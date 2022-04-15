@@ -108,7 +108,7 @@ uint8_t ALU(uint8_t op1, uint8_t op2, char op, uint8_t cc) {
 
 int main(int argc, char **argv) {
 	if (argc != 2) {
-		fprintf(stdout, "Usage: ./bruhsm [filename]\n");
+		fprintf(stdout, "Usage: ./ya8085sim [filename]\n");
 		return 0;
 	}
 
