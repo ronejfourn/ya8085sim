@@ -114,6 +114,17 @@ token tokenizer_get_next(tokenizer *tk){
 	return tok;
 }
 
+token tokenizer_peek_next(tokenizer *tk){
+	int r    = tk->row;
+	int c    = tk->col;
+	char *d  = tk->data;
+	token t  = tokenizer_get_next(tk);
+	tk->row  = r;
+	tk->col  = c;
+	tk->data = d;
+	return t;
+}
+
 char *token_name(int type) {
 	switch (type) {
 		case TOKEN_NONE: return "none";

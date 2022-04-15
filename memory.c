@@ -16,11 +16,54 @@ static int inc_loadat() {
 	return p;
 }
 
+struct {
+	int count, cap;
+	struct {
+		lenstring key;
+		int r, c, i;
+	} *data;
+} sq;
+
+int get_mem(int i) {return memory[i];}
+int get_loadat() {return loadat;}
+
+void symbol_queue_init() {
+	sq.data  = malloc(sizeof(*sq.data) * 8);
+	sq.cap   = 8;
+	sq.count = 0;
+}
+
+void symbol_queue(token t) {
+	if (sq.count == sq.cap) {
+		sq.cap *= 2;
+		sq.data = realloc(sq.data, sq.cap * sizeof(*sq.data));
+	}
+	sq.data[sq.count].key  = (lenstring) {t.sym, t.len};
+	sq.data[sq.count].r = t.row;
+	sq.data[sq.count].c = t.col;
+	sq.data[sq.count].i = loadat;
+	sq.count ++;
+}
+
+char *second_pass() {
+	for (int i = 0; i < sq.count; i++) {
+		int64_t p = (int64_t)symbol_table_get(sq.data[i].key);
+		if (p != -1) {
+			memory[sq.data[i].i    ] = (p >> 0) & 0xFF;
+			memory[sq.data[i].i + 1] = (p >> 8) & 0xFF;
+		} else {
+			return fmtstr("at [%i:%i] unknown symbol '%.*s'",
+					sq.data[i].r, sq.data[i].c, sq.data[i].key.len, sq.data[i].key.data);
+		}
+	}
+	return NULL;
+}
+
 char *load_instruction_opcode(lenstring n, tokenizer *tk) {
 	int64_t i = (int64_t)instruction_table_get(n);
 
 	if (i != -1)
-		memory[inc_loadat()] = i;
+		memory[inc_loadat()] = i & 0xFF;
 	else
 		return fmtstr("at [%i:%i] bad token, got %.*s",
 				tk->row, tk->col, n.len, n.data);
@@ -101,11 +144,7 @@ char *load_instruction_mov(lenstring n, tokenizer *tk) {
 							a.row, a.col):
 			fmtstr("at [%i:%i] expected one of 'A', 'B', 'C', 'D', 'E', 'H', 'L' or 'M', got %.*s",
 							a.row, a.col, a.len, a.sym);
-
-	lenstring key;
-	key.data = k;
-	key.len  = 7;
-	return load_instruction_opcode(key, tk);
+	return load_instruction_opcode(ls_from_cstr(k), tk);
 }
 
 /* "MVI" */
@@ -152,13 +191,10 @@ char *load_instruction_mvi(lenstring n, tokenizer *tk) {
 		return fmtstr("at [%i:%i] expected 8-bit number (00h - 0ffh), got %0xh",
 				a.row, a.col, a.num);
 
-	lenstring key;
-	key.data = k;
-	key.len  = strlen(k);
-	char *msg = load_instruction_opcode(key, tk);
+	char *msg = load_instruction_opcode(ls_from_cstr(k), tk);
 	if (msg) return msg;
 
-	memory[inc_loadat()] = a.num;
+	memory[inc_loadat()] = a.num & 0xFF;
 
 	return NULL;
 }
@@ -200,25 +236,36 @@ char *load_instruction_lxi(lenstring n, tokenizer *tk) {
 		return "expected ','";
 
 	a = tokenizer_get_next(tk);
-	if (a.type != TOKEN_NUM) {  // TODO: labels are also allowed here
+	if (a.type == TOKEN_SYM) {
+		char *msg = load_instruction_opcode(ls_from_cstr(k), tk);
+		if (msg) return msg;
+
+		int64_t p = (int64_t)symbol_table_get((lenstring) {a.sym, a.len});
+		if (p != -1) {
+			memory[inc_loadat()] = (p >> 0) & 0xFF;
+			memory[inc_loadat()] = (p >> 8) & 0xFF;
+		} else {
+			symbol_queue(a);
+			inc_loadat();
+			inc_loadat();
+		}
+	} else if (a.type == TOKEN_NUM) {
+		char *msg = load_instruction_opcode(ls_from_cstr(k), tk);
+		if (msg) return msg;
+
+		if (a.num  > 0xFFFF)
+			return fmtstr("at [%i:%i] expected 16-bit number (0000h - 0ffffh), got %0xh",
+					a.row, a.col, a.num);
+
+		memory[inc_loadat()] = (a.num >> 0) & 0xFF;
+		memory[inc_loadat()] = (a.num >> 8) & 0xFF;
+	} else {
 		char *v = token_val_str(a);
-		char *m = fmtstr("at [%i:%i] expected 16-bit number (0000h - 0ffffh), got (%s) %s",
+		char *m = fmtstr("at [%i:%i] expected 16-bit number (0000h - 0ffffh) or label, got (%s) %s",
 				a.row, a.col, token_name(a.type), v);
 		free(v);
 		return m;
 	}
-	if (a.num  > 0xFFFF)
-		return fmtstr("at [%i:%i] expected 16-bit number (0000h - 0ffffh), got %0xh",
-				a.row, a.col, a.num);
-
-	lenstring key;
-	key.data = k;
-	key.len  = strlen(k);
-	char *msg = load_instruction_opcode(key, tk);
-	if (msg) return msg;
-
-	memory[inc_loadat()] = (a.num >> 0) & 0xFF;
-	memory[inc_loadat()] = (a.num >> 8) & 0xFF;
 
 	return NULL;
 }
@@ -250,10 +297,7 @@ char *load_instruction_ldax_stax(lenstring n, tokenizer *tk) {
 				a.row, a.col, a.len, a.sym);
 	k[i++] = p;
 
-	lenstring key;
-	key.data = k;
-	key.len  = strlen(k);
-	return load_instruction_opcode(key, tk);
+	return load_instruction_opcode(ls_from_cstr(k), tk);
 }
 
 /* "PUSH" */ /* "POP"  */
@@ -295,10 +339,7 @@ char *load_instruction_push_pop(lenstring n, tokenizer *tk) {
 				a.row, a.col, a.len, a.sym);
 	}
 
-	lenstring key;
-	key.data = k;
-	key.len  = strlen(k);
-	return load_instruction_opcode(key, tk);
+	return load_instruction_opcode(ls_from_cstr(k), tk);
 }
 
 /* "ADD" */ /* "ADC" */ /* "SUB" */ /* "SBB" */ /* "INR" */
@@ -330,10 +371,7 @@ char *load_instruction_arith_reg(lenstring n, tokenizer *tk) {
 				a.row, a.col, a.len, a.sym);
 	k[i++] = p;
 
-	lenstring key;
-	key.data = k;
-	key.len  = strlen(k);
-	return load_instruction_opcode(key, tk);
+	return load_instruction_opcode(ls_from_cstr(k), tk);
 }
 
 /* "DAD" */ /* "INX" */ /* "DCX" */
@@ -363,10 +401,7 @@ char *load_instruction_arith_rp(lenstring n, tokenizer *tk) {
 				a.row, a.col, a.len, a.sym);
 	k[i++] = p;
 
-	lenstring key;
-	key.data = k;
-	key.len  = strlen(k);
-	return load_instruction_opcode(key, tk);
+	return load_instruction_opcode(ls_from_cstr(k), tk);
 }
 
 /* "ADI" */ /* "ACI" */ /* "SUI" */ /* "SBI" */
@@ -389,13 +424,10 @@ char *load_instruction_imm_w(lenstring n, tokenizer *tk) {
 		return fmtstr("at [%i:%i] expected 8-bit number (00h - 0ffh), got %0xh",
 				a.row, a.col, a.num);
 
-	lenstring key;
-	key.data = k;
-	key.len  = strlen(k);
-	char *msg = load_instruction_opcode(key, tk);
+	char *msg = load_instruction_opcode(ls_from_cstr(k), tk);
 	if (msg) return msg;
 
-	memory[inc_loadat()] = a.num;
+	memory[inc_loadat()] = a.num & 0xFF;
 
 	return NULL;
 }
@@ -416,24 +448,36 @@ char *load_instruction_imm_dw(lenstring n, tokenizer *tk) {
 		k[i] = n.data[i];
 
 	token a = tokenizer_get_next(tk);
-	if (a.type != TOKEN_NUM) { // TODO: labels are also allowed here
+	if (a.type == TOKEN_SYM) {
+		char *msg = load_instruction_opcode(ls_from_cstr(k), tk);
+		if (msg) return msg;
+
+		int64_t p = (int64_t)symbol_table_get((lenstring) {a.sym, a.len});
+		if (p != -1) {
+			memory[inc_loadat()] = (p >> 0) & 0xFF;
+			memory[inc_loadat()] = (p >> 8) & 0xFF;
+		} else {
+			symbol_queue(a);
+			inc_loadat();
+			inc_loadat();
+		}
+	} else if (a.type == TOKEN_NUM) {
+		char *msg = load_instruction_opcode(ls_from_cstr(k), tk);
+		if (msg) return msg;
+
+		if (a.num  > 0xFFFF)
+			return fmtstr("at [%i:%i] expected 16-bit number (0000h - 0ffffh), got %0xh",
+					a.row, a.col, a.num);
+
+		memory[inc_loadat()] = (a.num >> 0) & 0xFF;
+		memory[inc_loadat()] = (a.num >> 8) & 0xFF;
+	} else {
 		char *v = token_val_str(a);
-		char *m = fmtstr("at [%i:%i] expected 16-bit number (0000h - 0ffffh), got (%s) %s",
+		char *m = fmtstr("at [%i:%i] expected 16-bit number (0000h - 0ffffh) or label, got (%s) %s",
 				a.row, a.col, token_name(a.type), v);
 		free(v);
 		return m;
 	}
-	if (a.num  > 0xFFFF)
-		return fmtstr("at [%i:%i] expected 16-bit number (0000h - 0ffffh), got %0xh",
-				a.row, a.col, a.num);
-
-	lenstring key;
-	key.data = k;
-	key.len  = strlen(k);
-	load_instruction_opcode(key, tk);
-
-	memory[inc_loadat()] = (a.num >> 0) & 0xFF;
-	memory[inc_loadat()] = (a.num >> 8) & 0xFF;
 
 	return NULL;
 }
@@ -455,8 +499,5 @@ char *load_instruction_rst(lenstring n, tokenizer *tk) {
 				a.row, a.col, a.num);
 	k[4] = a.num + '0';
 
-	lenstring key;
-	key.data = k;
-	key.len  = strlen(k);
-	return load_instruction_opcode(key, tk);
+	return load_instruction_opcode(ls_from_cstr(k), tk);
 }

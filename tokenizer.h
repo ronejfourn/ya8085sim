@@ -5,6 +5,7 @@ typedef struct token     token;
 char *token_name(int type);
 char *token_val_str(token t);
 token tokenizer_get_next (tokenizer *tk);
+token tokenizer_peek_next (tokenizer *tk);
 void token_print(token tok);
 void token_println(token tok);
 

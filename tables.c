@@ -7,54 +7,56 @@
 static void *hash_table_get(hash_table *table, lenstring key);
 static void *hash_table_get_nocase(hash_table *table, lenstring key);
 
-static hash_table *itable, *pitable;
+static hash_table *itable, *ptable, *stable;
 
 void *instruction_table_get(lenstring key) {
 	return hash_table_get_nocase(itable, key);
 }
  void *partial_instruction_table_get(lenstring key) {
-	return hash_table_get_nocase(pitable, key);
+	return hash_table_get_nocase(ptable, key);
  }
 
-static long hash(lenstring key) {
-	long hashVal = 0;
+int64_t hash(lenstring key) {
+	int64_t hashVal = 0;
 	for (int i = 0; i < key.len; i++) {
 		hashVal = (hashVal << 4) + key.data[i];
-		long g = hashVal & 0xF0000000L;
+		int64_t g = hashVal & 0xF0000000L;
 		if (g != 0) hashVal ^= g >> 24;
 		hashVal &= ~g;
 	}
 	return hashVal;
 }
 
-static long hash_nocase(lenstring key) {
-	long hashVal = 0;
+static int64_t hash_nocase(lenstring key) {
+	int64_t hashVal = 0;
 	for (int i = 0; i < key.len; i++) {
 		hashVal = (hashVal << 4) + TO_UCASE(key.data[i]);
-		long g = hashVal & 0xF0000000L;
+		int64_t g = hashVal & 0xF0000000L;
 		if (g != 0) hashVal ^= g >> 24;
 		hashVal &= ~g;
 	}
 	return hashVal;
 }
 
-static void hash_table_add(hash_table *table, lenstring key, void *value) {
+static char hash_table_add(hash_table *table, lenstring key, void *value) {
 	int64_t hv = hash(key);
 	int *a = (int *)table - 1;
 	if (table[hv % (*a)].key.len == 0) {
 		table[hv % (*a)].key  = key;
 		table[hv % (*a)].hash = hv;
 		table[hv % (*a)].val  = value;
+		return 1;
 	} else {
 		for (int i = (hv % (*a) + 1) % (*a); i != hv % (*a); i = (i + 1) % (*a)) {
 			if (table[i].key.len == 0) {
 				table[i].key  = key;
 				table[i].hash = hv;
 				table[i].val  = value;
-				return;
+				return 1;
 			}
 		}
 	}
+	return 0;
 }
 
 static void *hash_table_get_nocase(hash_table *table, lenstring key) {
@@ -94,6 +96,26 @@ static hash_table *hash_table_new (int size) {
 	int * a = tmp;
 	*a = size;
 	return tmp + sizeof(int);
+}
+
+void symbol_table_init() {
+	stable = hash_table_new(8);
+}
+
+void symbol_table_add(lenstring key, int64_t value) {
+	if (hash_table_add(stable, key, (void *)value)) return;
+
+	int *a = (int *)stable - 1;
+	hash_table *tmp = hash_table_new(*a * 2);
+	for (int i = 0; i < *a; i ++)
+		hash_table_add(tmp, stable[i].key, stable[i].val);
+	free(a);
+	stable = tmp;
+	hash_table_add(stable, key, (void *)value);
+}
+
+void *symbol_table_get(lenstring s) {
+	return hash_table_get(stable, s);
 }
 
 void instruction_table_init() {
@@ -345,67 +367,67 @@ void instruction_table_init() {
 }
 
 void partial_instruction_table_init() {
-	pitable = hash_table_new(67);
-	hash_table_add(pitable, ls_from_cstr("MOV"), (void *) load_instruction_mov);
-	hash_table_add(pitable, ls_from_cstr("MVI"), (void *) load_instruction_mvi);
-	hash_table_add(pitable, ls_from_cstr("LXI"), (void *) load_instruction_lxi);
-	hash_table_add(pitable, ls_from_cstr("LDAX"), (void *) load_instruction_ldax_stax);
-	hash_table_add(pitable, ls_from_cstr("STAX"), (void *) load_instruction_ldax_stax);
-	hash_table_add(pitable, ls_from_cstr("PUSH"), (void *) load_instruction_push_pop);
-	hash_table_add(pitable, ls_from_cstr("POP" ), (void *) load_instruction_push_pop);
-	hash_table_add(pitable, ls_from_cstr("ADD"), (void *) load_instruction_arith_reg);
-	hash_table_add(pitable, ls_from_cstr("ADC"), (void *) load_instruction_arith_reg);
-	hash_table_add(pitable, ls_from_cstr("SUB"), (void *) load_instruction_arith_reg);
-	hash_table_add(pitable, ls_from_cstr("SBB"), (void *) load_instruction_arith_reg);
-	hash_table_add(pitable, ls_from_cstr("INR"), (void *) load_instruction_arith_reg);
-	hash_table_add(pitable, ls_from_cstr("DCR"), (void *) load_instruction_arith_reg);
-	hash_table_add(pitable, ls_from_cstr("ANA"), (void *) load_instruction_arith_reg);
-	hash_table_add(pitable, ls_from_cstr("XRA"), (void *) load_instruction_arith_reg);
-	hash_table_add(pitable, ls_from_cstr("ORA"), (void *) load_instruction_arith_reg);
-	hash_table_add(pitable, ls_from_cstr("CMP"), (void *) load_instruction_arith_reg);
-	hash_table_add(pitable, ls_from_cstr("DAD"), (void *) load_instruction_arith_rp);
-	hash_table_add(pitable, ls_from_cstr("INX"), (void *) load_instruction_arith_rp);
-	hash_table_add(pitable, ls_from_cstr("DCX"), (void *) load_instruction_arith_rp);
-	hash_table_add(pitable, ls_from_cstr("ADI"), (void *) load_instruction_imm_w);
-	hash_table_add(pitable, ls_from_cstr("ACI"), (void *) load_instruction_imm_w);
-	hash_table_add(pitable, ls_from_cstr("SUI"), (void *) load_instruction_imm_w);
-	hash_table_add(pitable, ls_from_cstr("SBI"), (void *) load_instruction_imm_w);
-	hash_table_add(pitable, ls_from_cstr("ANI"), (void *) load_instruction_imm_w);
-	hash_table_add(pitable, ls_from_cstr("XRI"), (void *) load_instruction_imm_w);
-	hash_table_add(pitable, ls_from_cstr("ORI"), (void *) load_instruction_imm_w);
-	hash_table_add(pitable, ls_from_cstr("CPI"), (void *) load_instruction_imm_w);
-	hash_table_add(pitable, ls_from_cstr("IN" ), (void *) load_instruction_imm_w);
-	hash_table_add(pitable, ls_from_cstr("OUT"), (void *) load_instruction_imm_w);
-	hash_table_add(pitable, ls_from_cstr("LHLD"), (void *) load_instruction_imm_dw);
-	hash_table_add(pitable, ls_from_cstr("SHLD"), (void *) load_instruction_imm_dw);
-	hash_table_add(pitable, ls_from_cstr("LDA" ), (void *) load_instruction_imm_dw);
-	hash_table_add(pitable, ls_from_cstr("STA" ), (void *) load_instruction_imm_dw);
-	hash_table_add(pitable, ls_from_cstr("JMP" ), (void *) load_instruction_imm_dw);
-	hash_table_add(pitable, ls_from_cstr("JNZ" ), (void *) load_instruction_imm_dw);
-	hash_table_add(pitable, ls_from_cstr("JZ"  ), (void *) load_instruction_imm_dw);
-	hash_table_add(pitable, ls_from_cstr("JNC" ), (void *) load_instruction_imm_dw);
-	hash_table_add(pitable, ls_from_cstr("JC"  ), (void *) load_instruction_imm_dw);
-	hash_table_add(pitable, ls_from_cstr("JPO" ), (void *) load_instruction_imm_dw);
-	hash_table_add(pitable, ls_from_cstr("JPE" ), (void *) load_instruction_imm_dw);
-	hash_table_add(pitable, ls_from_cstr("JP"  ), (void *) load_instruction_imm_dw);
-	hash_table_add(pitable, ls_from_cstr("JM"  ), (void *) load_instruction_imm_dw);
-	hash_table_add(pitable, ls_from_cstr("CALL"), (void *) load_instruction_imm_dw);
-	hash_table_add(pitable, ls_from_cstr("CNZ" ), (void *) load_instruction_imm_dw);
-	hash_table_add(pitable, ls_from_cstr("CZ"  ), (void *) load_instruction_imm_dw);
-	hash_table_add(pitable, ls_from_cstr("CNC" ), (void *) load_instruction_imm_dw);
-	hash_table_add(pitable, ls_from_cstr("CC"  ), (void *) load_instruction_imm_dw);
-	hash_table_add(pitable, ls_from_cstr("CPO" ), (void *) load_instruction_imm_dw);
-	hash_table_add(pitable, ls_from_cstr("CPE" ), (void *) load_instruction_imm_dw);
-	hash_table_add(pitable, ls_from_cstr("CP"  ), (void *) load_instruction_imm_dw);
-	hash_table_add(pitable, ls_from_cstr("CM"  ), (void *) load_instruction_imm_dw);
-	hash_table_add(pitable, ls_from_cstr("RET" ), (void *) load_instruction_imm_dw);
-	hash_table_add(pitable, ls_from_cstr("RNZ" ), (void *) load_instruction_imm_dw);
-	hash_table_add(pitable, ls_from_cstr("RZ"  ), (void *) load_instruction_imm_dw);
-	hash_table_add(pitable, ls_from_cstr("RNC" ), (void *) load_instruction_imm_dw);
-	hash_table_add(pitable, ls_from_cstr("RC"  ), (void *) load_instruction_imm_dw);
-	hash_table_add(pitable, ls_from_cstr("RPO" ), (void *) load_instruction_imm_dw);
-	hash_table_add(pitable, ls_from_cstr("RPE" ), (void *) load_instruction_imm_dw);
-	hash_table_add(pitable, ls_from_cstr("RP"  ), (void *) load_instruction_imm_dw);
-	hash_table_add(pitable, ls_from_cstr("RM"  ), (void *) load_instruction_imm_dw);
-	hash_table_add(pitable, ls_from_cstr("RST"), (void *) load_instruction_rst);
+	ptable = hash_table_new(67);
+	hash_table_add(ptable, ls_from_cstr("MOV"), (void *) load_instruction_mov);
+	hash_table_add(ptable, ls_from_cstr("MVI"), (void *) load_instruction_mvi);
+	hash_table_add(ptable, ls_from_cstr("LXI"), (void *) load_instruction_lxi);
+	hash_table_add(ptable, ls_from_cstr("LDAX"), (void *) load_instruction_ldax_stax);
+	hash_table_add(ptable, ls_from_cstr("STAX"), (void *) load_instruction_ldax_stax);
+	hash_table_add(ptable, ls_from_cstr("PUSH"), (void *) load_instruction_push_pop);
+	hash_table_add(ptable, ls_from_cstr("POP" ), (void *) load_instruction_push_pop);
+	hash_table_add(ptable, ls_from_cstr("ADD"), (void *) load_instruction_arith_reg);
+	hash_table_add(ptable, ls_from_cstr("ADC"), (void *) load_instruction_arith_reg);
+	hash_table_add(ptable, ls_from_cstr("SUB"), (void *) load_instruction_arith_reg);
+	hash_table_add(ptable, ls_from_cstr("SBB"), (void *) load_instruction_arith_reg);
+	hash_table_add(ptable, ls_from_cstr("INR"), (void *) load_instruction_arith_reg);
+	hash_table_add(ptable, ls_from_cstr("DCR"), (void *) load_instruction_arith_reg);
+	hash_table_add(ptable, ls_from_cstr("ANA"), (void *) load_instruction_arith_reg);
+	hash_table_add(ptable, ls_from_cstr("XRA"), (void *) load_instruction_arith_reg);
+	hash_table_add(ptable, ls_from_cstr("ORA"), (void *) load_instruction_arith_reg);
+	hash_table_add(ptable, ls_from_cstr("CMP"), (void *) load_instruction_arith_reg);
+	hash_table_add(ptable, ls_from_cstr("DAD"), (void *) load_instruction_arith_rp);
+	hash_table_add(ptable, ls_from_cstr("INX"), (void *) load_instruction_arith_rp);
+	hash_table_add(ptable, ls_from_cstr("DCX"), (void *) load_instruction_arith_rp);
+	hash_table_add(ptable, ls_from_cstr("ADI"), (void *) load_instruction_imm_w);
+	hash_table_add(ptable, ls_from_cstr("ACI"), (void *) load_instruction_imm_w);
+	hash_table_add(ptable, ls_from_cstr("SUI"), (void *) load_instruction_imm_w);
+	hash_table_add(ptable, ls_from_cstr("SBI"), (void *) load_instruction_imm_w);
+	hash_table_add(ptable, ls_from_cstr("ANI"), (void *) load_instruction_imm_w);
+	hash_table_add(ptable, ls_from_cstr("XRI"), (void *) load_instruction_imm_w);
+	hash_table_add(ptable, ls_from_cstr("ORI"), (void *) load_instruction_imm_w);
+	hash_table_add(ptable, ls_from_cstr("CPI"), (void *) load_instruction_imm_w);
+	hash_table_add(ptable, ls_from_cstr("IN" ), (void *) load_instruction_imm_w);
+	hash_table_add(ptable, ls_from_cstr("OUT"), (void *) load_instruction_imm_w);
+	hash_table_add(ptable, ls_from_cstr("LHLD"), (void *) load_instruction_imm_dw);
+	hash_table_add(ptable, ls_from_cstr("SHLD"), (void *) load_instruction_imm_dw);
+	hash_table_add(ptable, ls_from_cstr("LDA" ), (void *) load_instruction_imm_dw);
+	hash_table_add(ptable, ls_from_cstr("STA" ), (void *) load_instruction_imm_dw);
+	hash_table_add(ptable, ls_from_cstr("JMP" ), (void *) load_instruction_imm_dw);
+	hash_table_add(ptable, ls_from_cstr("JNZ" ), (void *) load_instruction_imm_dw);
+	hash_table_add(ptable, ls_from_cstr("JZ"  ), (void *) load_instruction_imm_dw);
+	hash_table_add(ptable, ls_from_cstr("JNC" ), (void *) load_instruction_imm_dw);
+	hash_table_add(ptable, ls_from_cstr("JC"  ), (void *) load_instruction_imm_dw);
+	hash_table_add(ptable, ls_from_cstr("JPO" ), (void *) load_instruction_imm_dw);
+	hash_table_add(ptable, ls_from_cstr("JPE" ), (void *) load_instruction_imm_dw);
+	hash_table_add(ptable, ls_from_cstr("JP"  ), (void *) load_instruction_imm_dw);
+	hash_table_add(ptable, ls_from_cstr("JM"  ), (void *) load_instruction_imm_dw);
+	hash_table_add(ptable, ls_from_cstr("CALL"), (void *) load_instruction_imm_dw);
+	hash_table_add(ptable, ls_from_cstr("CNZ" ), (void *) load_instruction_imm_dw);
+	hash_table_add(ptable, ls_from_cstr("CZ"  ), (void *) load_instruction_imm_dw);
+	hash_table_add(ptable, ls_from_cstr("CNC" ), (void *) load_instruction_imm_dw);
+	hash_table_add(ptable, ls_from_cstr("CC"  ), (void *) load_instruction_imm_dw);
+	hash_table_add(ptable, ls_from_cstr("CPO" ), (void *) load_instruction_imm_dw);
+	hash_table_add(ptable, ls_from_cstr("CPE" ), (void *) load_instruction_imm_dw);
+	hash_table_add(ptable, ls_from_cstr("CP"  ), (void *) load_instruction_imm_dw);
+	hash_table_add(ptable, ls_from_cstr("CM"  ), (void *) load_instruction_imm_dw);
+	hash_table_add(ptable, ls_from_cstr("RET" ), (void *) load_instruction_imm_dw);
+	hash_table_add(ptable, ls_from_cstr("RNZ" ), (void *) load_instruction_imm_dw);
+	hash_table_add(ptable, ls_from_cstr("RZ"  ), (void *) load_instruction_imm_dw);
+	hash_table_add(ptable, ls_from_cstr("RNC" ), (void *) load_instruction_imm_dw);
+	hash_table_add(ptable, ls_from_cstr("RC"  ), (void *) load_instruction_imm_dw);
+	hash_table_add(ptable, ls_from_cstr("RPO" ), (void *) load_instruction_imm_dw);
+	hash_table_add(ptable, ls_from_cstr("RPE" ), (void *) load_instruction_imm_dw);
+	hash_table_add(ptable, ls_from_cstr("RP"  ), (void *) load_instruction_imm_dw);
+	hash_table_add(ptable, ls_from_cstr("RM"  ), (void *) load_instruction_imm_dw);
+	hash_table_add(ptable, ls_from_cstr("RST"), (void *) load_instruction_rst);
 }
