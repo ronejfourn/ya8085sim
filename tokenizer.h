@@ -11,7 +11,10 @@ lenstring tokenizer_peek_line(tokenizer *tk);
 void token_print(token tok);
 void token_println(token tok);
 
-enum {TOKEN_NONE, TOKEN_SYM, TOKEN_NUM, TOKEN_ERR, TOKEN_COL, TOKEN_COM, TOKEN_EOI, TOKEN_CMT};
+enum {
+	TOKEN_SYM, TOKEN_NUM, TOKEN_ERR, TOKEN_COL, TOKEN_COM,
+	TOKEN_EOI, TOKEN_CMT, TOKEN_INS, TOKEN_REG, TOKEN_REP
+};
 
 struct token {
 	int type;

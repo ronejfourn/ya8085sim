@@ -1,26 +1,27 @@
 #pragma once
 #include <stdint.h>
-typedef struct tokenizer tokenizer;
+typedef struct token token;
 typedef struct lenstring lenstring;
 typedef struct hash_table hash_table;
 
-typedef char *(*loader) (lenstring n, tokenizer* tk);
+typedef char *(*loader) (lenstring, token*, int*);
 
 int get_loadat();
 int get_load_pos();
 void set_loadat(uint16_t v);
 uint8_t *get_mem();
 void symbol_queue_init();
-char *second_pass();
-char *load_instruction(lenstring n, tokenizer *tk);
+char *symbol_resolve();
+char *load_instruction(lenstring n, token *token_table, int *token_index);
 
-char *load_instruction_mov(lenstring n, tokenizer *tk);
-char *load_instruction_mvi(lenstring n, tokenizer *tk);
-char *load_instruction_lxi(lenstring n, tokenizer *tk);
-char *load_instruction_ldax_stax(lenstring n, tokenizer *tk);
-char *load_instruction_push_pop(lenstring n, tokenizer *tk);
-char *load_instruction_arith_reg(lenstring n, tokenizer *tk);
-char *load_instruction_arith_rp(lenstring n, tokenizer *tk);
-char *load_instruction_imm_w(lenstring n, tokenizer *tk);
-char *load_instruction_imm_dw(lenstring n, tokenizer *tk);
-char *load_instruction_rst(lenstring n, tokenizer *tk);
+char *load_opcode(lenstring n, token *tk, int *ti);
+char *load_mov(lenstring n, token *token_table, int *token_index);
+char *load_mvi(lenstring n, token *token_table, int *token_index);
+char *load_lxi(lenstring n, token *token_table, int *token_index);
+char *load_ldax_stax(lenstring n, token *token_table, int *token_index);
+char *load_push_pop(lenstring n, token *token_table, int *token_index);
+char *load_arith_reg(lenstring n, token *token_table, int *token_index);
+char *load_arith_rp(lenstring n, token *token_table, int *token_index);
+char *load_imm_w(lenstring n, token *token_table, int *token_index);
+char *load_imm_dw(lenstring n, token *token_table, int *token_index);
+char *load_rst(lenstring n, token *token_table, int *token_index);

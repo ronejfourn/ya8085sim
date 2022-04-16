@@ -91,6 +91,7 @@ token tokenizer_get_next(tokenizer *tk){
 			tk->data ++;
 			tok.len ++;
 		}
+		tok.len --;
 		tk->data += (*tk->data != 0);
 		tk->data += (*tk->data != 0) && (*tk->data == '\n');
 		tk->col = 0;
@@ -151,48 +152,40 @@ lenstring tokenizer_peek_line(tokenizer *tk){
 
 char *token_name(int type) {
 	switch (type) {
-		case TOKEN_NONE: return "none";
-		case TOKEN_SYM : return "symbol";
-		case TOKEN_NUM : return "number";
-		case TOKEN_ERR : return "error";
-		case TOKEN_EOI : return "end of instruction";
-		case TOKEN_COL : return "colon";
-		case TOKEN_COM : return "comma";
-		case TOKEN_CMT : return "comment";
+		case TOKEN_INS: return "instruction";
+		case TOKEN_REG: return "register";
+		case TOKEN_REP: return "register pair";
+		case TOKEN_SYM: return "symbol";
+		case TOKEN_NUM: return "number";
+		case TOKEN_ERR: return "error";
+		case TOKEN_EOI: return "end of instruction";
+		case TOKEN_COL: return "colon";
+		case TOKEN_COM: return "comma";
+		case TOKEN_CMT: return "comment";
 		default: return "unknown";
 	}
 }
 
 char *token_val_str(token t) {
 	switch (t.type) {
-		case TOKEN_NONE: return fmtstr("");
-		case TOKEN_SYM : return fmtstr("%.*s", t.len, t.sym);
-		case TOKEN_NUM : return fmtstr("%0xh", t.num);
-		case TOKEN_ERR : return fmtstr("%.*s", t.len, t.err);
-		case TOKEN_EOI : return fmtstr("end of instruction");
-		case TOKEN_COL : return fmtstr("':'");
-		case TOKEN_COM : return fmtstr("','");
-		case TOKEN_CMT : return fmtstr("%.*s", t.len, t.cmt);
+		case TOKEN_INS: return fmtstr("%.*s", t.len, t.sym);
+		case TOKEN_REG: return fmtstr("%.*s", t.len, t.sym);
+		case TOKEN_REP: return fmtstr("%.*s", t.len, t.sym);
+		case TOKEN_SYM: return fmtstr("%.*s", t.len, t.sym);
+		case TOKEN_NUM: return fmtstr("%.2XH", t.num);
+		case TOKEN_ERR: return fmtstr("%.*s", t.len, t.err);
+		case TOKEN_EOI: return fmtstr("\\n");
+		case TOKEN_COL: return fmtstr(":");
+		case TOKEN_COM: return fmtstr(",");
+		case TOKEN_CMT: return fmtstr("%.*s", t.len, t.cmt);
 		default: return fmtstr("unknown");
 	}
 }
 
 void token_print(token tok) {
-	printf ("%4i [%4i:%-4i] %-10s", tok.row, tok.col, tok.col + tok.len, token_name(tok.type));
-	switch (tok.type) {
-		case TOKEN_SYM:
-			printf(": %.*s", tok.len, tok.sym);
-			break;
-		case TOKEN_NUM:
-			printf(": 0x%0x", tok.num);
-			break;
-		case TOKEN_ERR:
-			printf(": %s", tok.err);
-			break;
-		case TOKEN_CMT:
-			printf(": %.*s", tok.len - 1, tok.cmt);
-			break;
-	}
+	char *val = token_val_str(tok);
+	printf ("%4i [%i-%i] %-20s %s", tok.row, tok.col, tok.col + tok.len, token_name(tok.type), val);
+	free(val);
 }
 
 void token_println(token tok) { token_print(tok); putchar('\n'); }

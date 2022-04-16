@@ -22,3 +22,7 @@ typedef struct lenstring {
 static inline lenstring ls_from_cstr(char *str) {
 	return (lenstring) {str, strlen(str)};
 }
+
+static inline lenstring ls_from_parts(char *str, size_t len) {
+	return (lenstring) {str, len};
+}

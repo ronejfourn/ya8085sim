@@ -8,7 +8,7 @@
 enum {
 	REG_A, REG_F, REG_B, REG_C,
 	REG_D, REG_E, REG_H, REG_L,
-	REG_COUNT, REG_M,
+	REG_COUNT,
 };
 
 enum {
@@ -20,8 +20,9 @@ enum {
 	FLAG_CY   = 1,
 };
 
-uint8_t registers[REG_COUNT];
-uint8_t IO[0x100];
+static uint8_t registers[REG_COUNT];
+static uint8_t IO[0x100];
+extern uint8_t memory[0x10000];
 
 #define UPPER_BYTE_B registers[REG_B]
 #define UPPER_BYTE_D registers[REG_D]
@@ -34,19 +35,18 @@ uint8_t IO[0x100];
 #define LOWER_BYTE_H registers[REG_L]
 #define LOWER_BYTE_SP *SPL
 #define LOWER_BYTE_PSW registers[REG_F]
-
 #define REG_PAIR(x) ((uint16_t)UPPER_BYTE_ ##x << 8 | (uint16_t)LOWER_BYTE_ ##x)
 
-#define REGISTER_A registers[REG_A]
-#define REGISTER_F registers[REG_F]
-#define REGISTER_B registers[REG_B]
-#define REGISTER_C registers[REG_C]
-#define REGISTER_D registers[REG_D]
-#define REGISTER_E registers[REG_E]
-#define REGISTER_H registers[REG_H]
-#define REGISTER_L registers[REG_L]
-#define REGISTER_M memory[REG_PAIR(H)]
-#define REGISTER(x) REGISTER_ ##x
+#define _REG__A registers[REG_A]
+#define _REG__F registers[REG_F]
+#define _REG__B registers[REG_B]
+#define _REG__C registers[REG_C]
+#define _REG__D registers[REG_D]
+#define _REG__E registers[REG_E]
+#define _REG__H registers[REG_H]
+#define _REG__L registers[REG_L]
+#define _REG__M memory[REG_PAIR(H)]
+#define REGISTER(x) _REG__ ##x
 
 #define SET(f, b) ((f) |= (b))
 #define RESET(f, b) ((f) &= ~(b))
@@ -68,41 +68,64 @@ uint8_t ALU(uint8_t op1, uint8_t op2, char op, uint8_t cc) {
 	}
 
 	res == 0 ?
-		SET(registers[REG_F], FLAG_Z):
-		RESET(registers[REG_F], FLAG_Z);
+		SET(REGISTER(F), FLAG_Z):
+		RESET(REGISTER(F), FLAG_Z);
 
 	(res & 0x80) == 0 ?
-		RESET(registers[REG_F], FLAG_S):
-		SET(registers[REG_F], FLAG_S);
+		RESET(REGISTER(F), FLAG_S):
+		SET(REGISTER(F), FLAG_S);
 
 	if (cc) {
 		if (op == '-')
 			(op1 + op2 > 0xff) ?
-				RESET(registers[REG_F], FLAG_CY):
-				SET(registers[REG_F], FLAG_CY);
+				RESET(REGISTER(F), FLAG_CY):
+				SET(REGISTER(F), FLAG_CY);
 		else if (op == '+')
 			(op1 + op2 > 0xff) ?
-				SET(registers[REG_F], FLAG_CY):
-				RESET(registers[REG_F], FLAG_CY);
+				SET(REGISTER(F), FLAG_CY):
+				RESET(REGISTER(F), FLAG_CY);
 	}
 
 	uint8_t cnt = 0;
 	for (uint8_t cpy = res; cpy != 0; cpy >>= 1)
 		cnt += cpy & 1;
 	(cnt & 1) ?
-		RESET(registers[REG_F], FLAG_P):
-		SET(registers[REG_F], FLAG_P);
+		RESET(REGISTER(F), FLAG_P):
+		SET(REGISTER(F), FLAG_P);
 
 	if (op == '-')
 		((op1 & 0xf) + (op2 & 0xf) > 0xf) ?
-			SET(registers[REG_F], FLAG_AC):
-			RESET(registers[REG_F], FLAG_AC);
+			SET(REGISTER(F), FLAG_AC):
+			RESET(REGISTER(F), FLAG_AC);
 	else if (op == '+')
 		((op1 & 0xf) + (op2 & 0xf) > 0xf) ?
-			RESET(registers[REG_F], FLAG_AC):
-			SET(registers[REG_F], FLAG_AC);
+			RESET(REGISTER(F), FLAG_AC):
+			SET(REGISTER(F), FLAG_AC);
 
 	return res;
+}
+
+char *read_entire_file(char *fname) {
+	FILE *inf = fopen(fname, "rb");
+	if (!inf) {
+		fprintf(stderr, "could not open file %s\n", fname);
+		return NULL;
+	}
+
+	fseek(inf, 0, SEEK_END);
+	int fs = ftell(inf);
+	rewind(inf);
+
+	char *buf = malloc(fs);
+	if (!buf) {
+		fprintf(stderr, "out of memory\n");
+		fclose(inf);
+		return NULL;
+	}
+	fread(buf, 1, fs, inf);
+	fclose(inf);
+
+	return buf;
 }
 
 int main(int argc, char **argv) {
@@ -111,144 +134,136 @@ int main(int argc, char **argv) {
 		return 0;
 	}
 
-	FILE *inf = fopen(argv[1], "rb");
-	if (!inf) {
-		fprintf(stderr, "Could not open file '%s'\n", argv[1]);
-		return 1;
-	}
-
-	fseek(inf, 0, SEEK_END);
-	int fs = ftell(inf);
-	rewind(inf);
-
-	char *buf = malloc(fs);
-	fread(buf, 1, fs, inf);
-	fclose(inf);
+	char *buf = read_entire_file(argv[1]);
+	if (!buf) return 1;
 
 	instruction_table_init();
 	partial_instruction_table_init();
 	symbol_table_init();
 	symbol_queue_init();
 
+	set_loadat(0x4200);
+
+	// Tokenize
+
 	tokenizer tk;
-	tk.data = buf;
 	tk.row = 0;
 	tk.col = 0;
-	char *msg;
-	char first_pass_successful = 1;
+	tk.data = buf;
 
-	set_loadat(0x4204);
-	char program_should_run = 1;
+	int token_count = 0;
+	int no_errors = 1;
+	while (*tk.data) {
+		token t = tokenizer_get_next(&tk);
+		if (t.type == TOKEN_ERR) {
+			fprintf(stderr, "%s\n", t.err);
+			no_errors = 0;
+		}
+		token_count ++;
+	}
+
+	tk.data = buf;
+	int token_index = 0;
+	token *token_table = malloc(sizeof(token) * token_count);
+	while (*tk.data)
+		token_table[token_index++] = tokenizer_get_next(&tk);
+
+	// Parse tokens
+
+	token_index = 0;
+	while (token_index < token_count && no_errors) {
+		if (token_table[token_index].type == TOKEN_EOI || token_table[token_index].type == TOKEN_CMT) {
+			token_index ++;
+			continue;
+		}
+
+		if (token_table[token_index].type != TOKEN_SYM) {
+			token bad_token = token_table[token_index];
+			char *token_str = token_val_str(bad_token);
+			fprintf(stderr, "at [%i:%i] expected symbol, got '%s' (%s)\n",
+					bad_token.row, bad_token.col,
+					token_str, token_name(bad_token.type));
+			free(token_str);
+			no_errors = 0;
+			break;
+		}
+
+		if (token_table[token_index + 1].type == TOKEN_COL) {
+			token label = token_table[token_index];
+			char *error = symbol_table_add(ls_from_parts(label.sym, label.len), get_load_pos());
+			if (error) {
+				fprintf(stderr, "at [%i:%i] %s\n",
+						label.row, label.col, error);
+				free(error);
+				no_errors = 0;
+				break;
+			}
+			token_index ++;
+			if (token_table[token_index + 1].type != TOKEN_SYM) {
+				token bad_token = token_table[token_index];
+				char *token_str = token_val_str(bad_token);
+				fprintf(stderr, "at [%i:%i] expected instruction, got '%s' (%s)\n",
+						bad_token.row, bad_token.col,
+						token_str, token_name(bad_token.type));
+				free(token_str);
+				no_errors = 0;
+				break;
+			}
+			token_index ++;
+		}
+
+		token instruction = token_table[token_index];
+		char *error = load_instruction(ls_from_parts(instruction.sym, instruction.len), token_table, &token_index);
+		if (error) {
+			fprintf(stderr, "at [%i:%i] '%s'\n", token_table[token_index].row, token_table[token_index].col, error);
+			free(error);
+			no_errors = 0;
+			break;
+		}
+	}
+
+	// Resolve forward references
+
+	if (no_errors) {
+		char *error = symbol_resolve();
+		if (error) {
+			no_errors = 0;
+			fprintf(stderr, "%s\n", error);
+			free(error);
+		}
+	}
+
+	// Print instructions
+
+	for (token_index = 0; token_index < token_count && no_errors; token_index ++) {
+		token t = token_table[token_index];
+		if (t.type == TOKEN_CMT || t.type == TOKEN_EOI)
+			putchar('\n');
+		else if (t.type == TOKEN_COM)
+			printf("\b, ");
+		else if (t.type == TOKEN_COL)
+			printf("\b: ");
+		else {
+			char *v = token_val_str(t);
+			printf("%s ", v);
+			free(v);
+		}
+	}
+
+	// Execution
+
+	char program_should_run = 0;
 	uint16_t PC = get_loadat();
 	uint16_t SP = 0xFFFF;
 	uint16_t WZ = 0x0000;
 	uint8_t *SPH = (uint8_t *)&SP;
 	uint8_t *SPL = (uint8_t *)&SP + 1;
-	uint8_t *memory = get_mem();
 
-	int lcount = 0;
-	while (*tk.data) {
-		tokenizer_get_line(&tk);
-		lcount ++;
-	}
-
-	struct {
-		int pc, bc;
-		lenstring ln;
-	} *linedata = malloc (sizeof(*linedata) * lcount);
-
-	// first pass
-	// load instructions and calculate value of labels
-	int lc = 0;
-	tk.data = buf;
-	while (*tk.data) {
-		lenstring ln = tokenizer_peek_line(&tk);
-		token r = tokenizer_get_next(&tk);
-
-		if (r.type == TOKEN_ERR) {
-			first_pass_successful = 0;
-			fprintf(stderr, "%s\n", r.err);
-			break;
-		}
-
-		if (r.type == TOKEN_CMT || r.type == TOKEN_EOI) {
-			linedata[lc].pc = -1;
-			linedata[lc].bc = -1;
-			linedata[lc].ln = ln;
-			lc ++;
-			continue;
-		}
-
-		if (r.type != TOKEN_SYM) {
-			first_pass_successful = 0;
-			fprintf(stderr, "at [%i:%i] expected %s, got %s\n",
-					r.row, r.col, token_name(TOKEN_SYM), token_name(r.type));
-			break;
-		}
-
-		token a = tokenizer_peek_next(&tk);
-		if (a.type == TOKEN_COL) {
-			symbol_table_add((lenstring){r.sym, r.len}, get_load_pos());
-			r = tokenizer_get_next(&tk);
-			r = tokenizer_get_next(&tk);
-
-			if (r.type != TOKEN_SYM) {
-				first_pass_successful = 0;
-				char *v = token_val_str(r);
-				fprintf(stderr, "at [%i:%i] expected instruction, got (%s) %s",
-						r.row, r.col, token_name(r.type), v);
-				free(v);
-				break;
-			}
-		}
-
-		int prev = get_load_pos();
-		msg = load_instruction((lenstring){r.sym, r.len}, &tk);
-		if (msg) {
-			first_pass_successful = 0;
-			fprintf(stderr, "%s\n", msg);
-			free(msg);
-			break;
-		}
-
-		linedata[lc].pc = prev;
-		linedata[lc].bc = get_load_pos() - prev;
-		linedata[lc].ln = ln;
-		lc ++;
-	}
-
-	// second pass
-	// resolve forward references
-	char second_pass_successful = first_pass_successful;
-	if (first_pass_successful) {
-		msg = second_pass();
-		if (msg) {
-			fprintf(stderr, "%s\n", msg);
-			free(msg);
-			second_pass_successful = 0;
-		}
-	}
-
-	// print opcodes
-	tk.data = buf;
-	for (int i = 0; i < lcount && second_pass_successful; i++) {
-		if (linedata[i].pc != -1) {
-			printf(" %.4XH | ", PC);
-			for (int j = 0; j < linedata[i].bc; j ++)
-				printf("%.2X ", memory[linedata[i].pc + j]);
-			printf("%*s| %.*s\n", 9 - linedata[i].bc * 3, "", (int)linedata[i].ln.len, linedata[i].ln.data);
-		} else {
-			printf("%*s%.*s\n", 20, "", (int)linedata[i].ln.len, linedata[i].ln.data);
-		}
-	}
-
-	PC = get_loadat();
 	memory[0x2040] = 5;
 	uint8_t numbers[] = { 9, 3, 2, 4, 1 };
 	memcpy(memory + 0x2041, numbers, sizeof(numbers));
 
-	// execution loop
-	while (second_pass_successful && program_should_run) {
+	while (program_should_run && no_errors) {
 		switch (memory[PC]) {
 
 #define PUSH(rp) \
@@ -278,11 +293,11 @@ int main(int argc, char **argv) {
 #undef POP
 
 		case XTHL:
-			WZ = registers[REG_L];
-			registers[REG_L] = memory[SP];
+			WZ = REGISTER(L);
+			REGISTER(L) = memory[SP];
 			memory[SP] = WZ;
-			WZ = registers[REG_H];
-			registers[REG_H] = memory[SP + 1];
+			WZ = REGISTER(H);
+			REGISTER(H) = memory[SP + 1];
 			memory[SP + 1] = WZ;
 			++PC; break;
 
@@ -332,41 +347,41 @@ int main(int argc, char **argv) {
 #undef MOV
 
 		case LDAX_B:
-			registers[REG_A] = memory[REG_PAIR(B)];
+			REGISTER(A) = memory[REG_PAIR(B)];
 			++PC; break;
 
 		case LDAX_D:
-			registers[REG_A] = memory[REG_PAIR(D)];
+			REGISTER(A) = memory[REG_PAIR(D)];
 			++PC; break;
 
 		case STAX_B:
-			memory[REG_PAIR(B)] = registers[REG_A];
+			memory[REG_PAIR(B)] = REGISTER(A);
 			++PC; break;
 
 		case STAX_D:
-			memory[REG_PAIR(D)] = registers[REG_A];
+			memory[REG_PAIR(D)] = REGISTER(A);
 			++PC; break;
 
 		case LHLD:
 			WZ = (memory[PC + 1] & 0xFF) | ((memory[PC + 2] & 0xFF) << 8);
-			registers[REG_L] = memory[WZ];
-			registers[REG_H] = memory[WZ + 1];
+			REGISTER(L) = memory[WZ];
+			REGISTER(H) = memory[WZ + 1];
 			PC += 3; break;
 
 		case SHLD:
 			WZ = (memory[PC + 1] & 0xFF) | ((memory[PC + 2] & 0xFF) << 8);
-			memory[WZ] = registers[REG_L];
-			memory[WZ + 1] = registers[REG_H];
+			memory[WZ] = REGISTER(L);
+			memory[WZ + 1] = REGISTER(H);
 			PC += 3; break;
 
 		case LDA:
 			WZ = (memory[PC + 1] & 0xFF) | ((memory[PC + 2] & 0xFF) << 8);
-			registers[REG_A] = memory[WZ];
+			REGISTER(A) = memory[WZ];
 			PC += 3; break;
 
 		case STA:
 			WZ = (memory[PC + 1] & 0xFF) | ((memory[PC + 2] & 0xFF) << 8);
-			memory[WZ] = registers[REG_A];
+			memory[WZ] = REGISTER(A);
 			PC += 3; break;
 
 #define LXI(rp) \
@@ -383,12 +398,12 @@ int main(int argc, char **argv) {
 #undef LXI
 
 		case XCHG:
-			WZ = registers[REG_L];
-			registers[REG_L] = registers[REG_E];
-			registers[REG_E] = WZ;
-			WZ = registers[REG_H];
-			registers[REG_H] = registers[REG_D];
-			registers[REG_D] = WZ;
+			WZ = REGISTER(L);
+			REGISTER(L) = REGISTER(E);
+			REGISTER(E) = WZ;
+			WZ = REGISTER(H);
+			REGISTER(H) = REGISTER(D);
+			REGISTER(D) = WZ;
 			++PC; break;
 
 #define ADD(x) \
@@ -550,7 +565,7 @@ int main(int argc, char **argv) {
 
 #define CMP(x) \
 		case CMP_ ##x: { \
-			ALU(REGISTER_A, REGISTER(x), '-', 1); \
+			ALU(REGISTER(A), REGISTER(x), '-', 1); \
 			PC++; \
 		} break
 
@@ -701,7 +716,7 @@ int main(int argc, char **argv) {
 			++PC; break;
 
 		case CPI: {
-			ALU(REGISTER_A, memory[++PC], '-', 1);
+			ALU(REGISTER(A), memory[++PC], '-', 1);
 			PC++;
 		} break;
 
@@ -710,7 +725,7 @@ int main(int argc, char **argv) {
 			break;
 
 #define JMP_ON_TRUE(flag) \
-		PC = (registers[REG_F] & FLAG_ ##flag) ? \
+		PC = (REGISTER(F) & FLAG_ ##flag) ? \
 			(uint16_t)memory[PC + 2] << 8 | memory[PC + 1] : PC + 3; \
 		break
 
@@ -721,7 +736,7 @@ int main(int argc, char **argv) {
 #undef JMP_ON_TRUE
 
 #define JMP_ON_FALSE(flag) \
-		PC = (registers[REG_F] & FLAG_ ##flag) ? \
+		PC = (REGISTER(F) & FLAG_ ##flag) ? \
 			PC + 3 : (uint16_t)memory[PC + 2] << 8 | memory[PC + 1]; \
 		break
 
@@ -738,7 +753,7 @@ int main(int argc, char **argv) {
 			break;
 
 #define CALL_ON_TRUE(flag) \
-		if (registers[REG_F] & FLAG_ ##flag) { \
+		if (REGISTER(F) & FLAG_ ##flag) { \
 			memory[--SP] = PC >> 8; \
 			memory[--SP] = PC & 0xff; \
 			PC = (uint16_t)memory[PC + 2] << 8 | memory[PC + 1]; \
@@ -753,7 +768,7 @@ int main(int argc, char **argv) {
 #undef CALL_ON_TRUE
 
 #define CALL_ON_FALSE(flag) \
-		if (registers[REG_F] & FLAG_ ##flag) { \
+		if (REGISTER(F) & FLAG_ ##flag) { \
 			PC += 3;\
 		} else { \
 			memory[--SP] = PC >> 8; \
@@ -773,7 +788,7 @@ int main(int argc, char **argv) {
 			break;
 
 #define RET_ON_TRUE(flag) \
-		if (registers[REG_F] & FLAG_ ##flag) { \
+		if (REGISTER(F) & FLAG_ ##flag) { \
 			PC = (uint16_t)memory[SP + 1] << 8 | memory[SP]; \
 			SP += 2; \
 		} else { \
@@ -787,7 +802,7 @@ int main(int argc, char **argv) {
 #undef RET_ON_TRUE
 
 #define RET_ON_FALSE(flag) \
-		if (registers[REG_F] & FLAG_ ##flag) { \
+		if (REGISTER(F) & FLAG_ ##flag) { \
 			PC += 3; \
 		} else { \
 			PC = (uint16_t)memory[SP + 1] << 8 | memory[SP]; \
