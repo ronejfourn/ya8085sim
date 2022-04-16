@@ -157,6 +157,8 @@ char *token_name(int type) {
 		case TOKEN_REP: return "register pair";
 		case TOKEN_SYM: return "symbol";
 		case TOKEN_NUM: return "number";
+		case TOKEN_WRD: return "word";
+		case TOKEN_DWD: return "double word";
 		case TOKEN_ERR: return "error";
 		case TOKEN_EOI: return "end of instruction";
 		case TOKEN_COL: return "colon";
@@ -172,7 +174,9 @@ char *token_val_str(token t) {
 		case TOKEN_REG: return fmtstr("%.*s", t.len, t.sym);
 		case TOKEN_REP: return fmtstr("%.*s", t.len, t.sym);
 		case TOKEN_SYM: return fmtstr("%.*s", t.len, t.sym);
-		case TOKEN_NUM: return fmtstr("%.2XH", t.num);
+		case TOKEN_NUM: return fmtstr("%XH", t.num);
+		case TOKEN_WRD: return fmtstr("%.2XH", t.num);
+		case TOKEN_DWD: return fmtstr("%.4XH", t.num);
 		case TOKEN_ERR: return fmtstr("%.*s", t.len, t.err);
 		case TOKEN_EOI: return fmtstr("\\n");
 		case TOKEN_COL: return fmtstr(":");

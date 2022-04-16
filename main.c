@@ -116,7 +116,7 @@ char *read_entire_file(char *fname) {
 	int fs = ftell(inf);
 	rewind(inf);
 
-	char *buf = malloc(fs);
+	char *buf = malloc(fs + 1);
 	if (!buf) {
 		fprintf(stderr, "out of memory\n");
 		fclose(inf);
@@ -124,7 +124,7 @@ char *read_entire_file(char *fname) {
 	}
 	fread(buf, 1, fs, inf);
 	fclose(inf);
-
+	buf[fs] = 0;
 	return buf;
 }
 

@@ -173,6 +173,7 @@ char *load_mvi(lenstring n, token *tk, int *ti) {
 	}
 	if (a.num  > 0xFF)
 		return fmtstr("expected 8-bit number (00h - 0ffh), got %0xh", a.num);
+	tk[*ti].type = TOKEN_WRD;
 
 	char *msg = load_opcode(ls_from_cstr(k), tk, ti);
 	if (msg) return msg;
@@ -234,6 +235,7 @@ char *load_lxi(lenstring n, token *tk, int *ti) {
 			offset++;
 		}
 	} else if (a.type == TOKEN_NUM) {
+		tk[*ti].type = TOKEN_DWD;
 		char *msg = load_opcode(ls_from_cstr(k), tk, ti);
 		if (msg) return msg;
 
@@ -403,6 +405,7 @@ char *load_imm_w(lenstring n, token *tk, int *ti) {
 	}
 	if (a.num  > 0xFF)
 		return fmtstr("expected 8-bit number (00h - 0ffh), got %0xh", a.num);
+	tk[*ti].type = TOKEN_WRD;
 
 	char *msg = load_opcode(ls_from_cstr(k), tk, ti);
 	if (msg) return msg;
@@ -442,6 +445,7 @@ char *load_imm_dw(lenstring n, token *tk, int *ti) {
 			offset++;
 		}
 	} else if (a.type == TOKEN_NUM) {
+		tk[*ti].type = TOKEN_DWD;
 		char *msg = load_opcode(ls_from_cstr(k), tk, ti);
 		if (msg) return msg;
 
