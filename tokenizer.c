@@ -114,7 +114,18 @@ token tokenizer_get_next(tokenizer *tk){
 	return tok;
 }
 
-lenstring tokenizer_get_next_line(tokenizer *tk){
+token tokenizer_peek_next(tokenizer *tk){
+	int r    = tk->row;
+	int c    = tk->col;
+	char *d  = tk->data;
+	token t  = tokenizer_get_next(tk);
+	tk->row  = r;
+	tk->col  = c;
+	tk->data = d;
+	return t;
+}
+
+lenstring tokenizer_get_line(tokenizer *tk){
 	lenstring ret;
 	ret.data = tk->data;
 	ret.len = 0;
@@ -127,11 +138,11 @@ lenstring tokenizer_get_next_line(tokenizer *tk){
 	return ret;
 }
 
-token tokenizer_peek_next(tokenizer *tk){
+lenstring tokenizer_peek_line(tokenizer *tk){
 	int r    = tk->row;
 	int c    = tk->col;
 	char *d  = tk->data;
-	token t  = tokenizer_get_next(tk);
+	lenstring t = tokenizer_get_line(tk);
 	tk->row  = r;
 	tk->col  = c;
 	tk->data = d;

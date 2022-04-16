@@ -86,7 +86,6 @@ uint8_t ALU(uint8_t op1, uint8_t op2, char op, uint8_t cc) {
 				RESET(registers[REG_F], FLAG_CY);
 	}
 
-	uint8_t cpy = res;
 	uint8_t cnt = 0;
 	for (uint8_t cpy = res; cpy != 0; cpy >>= 1)
 		cnt += cpy & 1;
@@ -138,9 +137,6 @@ int main(int argc, char **argv) {
 	char *msg;
 	char first_pass_successful = 1;
 
-	uint8_t ibcount[0x10000]; // keep track of no. of bytes of instructions
-	int icount = 0;
-
 	set_loadat(0x4204);
 	char program_should_run = 1;
 	uint16_t PC = get_loadat();
@@ -150,15 +146,37 @@ int main(int argc, char **argv) {
 	uint8_t *SPL = (uint8_t *)&SP + 1;
 	uint8_t *memory = get_mem();
 
+	int lcount = 0;
+	while (*tk.data) {
+		tokenizer_get_line(&tk);
+		lcount ++;
+	}
+
+	struct {
+		int pc, bc;
+		lenstring ln;
+	} *linedata = malloc (sizeof(*linedata) * lcount);
+
 	// first pass
 	// load instructions and calculate value of labels
+	int lc = 0;
+	tk.data = buf;
 	while (*tk.data) {
+		lenstring ln = tokenizer_peek_line(&tk);
 		token r = tokenizer_get_next(&tk);
 
 		if (r.type == TOKEN_ERR) {
 			first_pass_successful = 0;
 			fprintf(stderr, "%s\n", r.err);
 			break;
+		}
+
+		if (r.type == TOKEN_CMT || r.type == TOKEN_EOI) {
+			linedata[lc].pc = -1;
+			linedata[lc].bc = -1;
+			linedata[lc].ln = ln;
+			lc ++;
+			continue;
 		}
 
 		if (r.type != TOKEN_SYM) {
@@ -171,18 +189,32 @@ int main(int argc, char **argv) {
 		token a = tokenizer_peek_next(&tk);
 		if (a.type == TOKEN_COL) {
 			symbol_table_add((lenstring){r.sym, r.len}, get_load_pos());
-			tokenizer_get_next(&tk);
-		} else {
-			int prev = get_load_pos();
-			msg = load_instruction((lenstring){r.sym, r.len}, &tk);
-			if (msg) {
+			r = tokenizer_get_next(&tk);
+			r = tokenizer_get_next(&tk);
+
+			if (r.type != TOKEN_SYM) {
 				first_pass_successful = 0;
-				fprintf(stderr, "%s\n", msg);
-				free(msg);
+				char *v = token_val_str(r);
+				fprintf(stderr, "at [%i:%i] expected instruction, got (%s) %s",
+						r.row, r.col, token_name(r.type), v);
+				free(v);
 				break;
 			}
-			ibcount[icount ++] = get_load_pos() - prev;
 		}
+
+		int prev = get_load_pos();
+		msg = load_instruction((lenstring){r.sym, r.len}, &tk);
+		if (msg) {
+			first_pass_successful = 0;
+			fprintf(stderr, "%s\n", msg);
+			free(msg);
+			break;
+		}
+
+		linedata[lc].pc = prev;
+		linedata[lc].bc = get_load_pos() - prev;
+		linedata[lc].ln = ln;
+		lc ++;
 	}
 
 	// second pass
@@ -199,13 +231,15 @@ int main(int argc, char **argv) {
 
 	// print opcodes
 	tk.data = buf;
-	uint16_t indx = get_loadat();
-	for (int i = 0; i < icount && second_pass_successful; i++) {
-		lenstring ln = tokenizer_get_next_line(&tk);
-		printf("%.4XH | ", PC);
-		for (int j = 0; j < ibcount[i]; j ++)
-				printf("%.2X ", memory[PC++]);
-		printf("%*s| %.*s\n", 9 - ibcount[i] * 3, "", (int)ln.len, ln.data);
+	for (int i = 0; i < lcount && second_pass_successful; i++) {
+		if (linedata[i].pc != -1) {
+			printf(" %.4XH | ", PC);
+			for (int j = 0; j < linedata[i].bc; j ++)
+				printf("%.2X ", memory[linedata[i].pc + j]);
+			printf("%*s| %.*s\n", 9 - linedata[i].bc * 3, "", (int)linedata[i].ln.len, linedata[i].ln.data);
+		} else {
+			printf("%*s%.*s\n", 20, "", (int)linedata[i].ln.len, linedata[i].ln.data);
+		}
 	}
 
 	PC = get_loadat();
