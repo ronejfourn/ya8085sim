@@ -5,6 +5,14 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+#if defined(_WIN32) || defined(_WIN64)
+#define _CRT_SECURE_NO_WARNINGS 1
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+#undef IN
+#undef OUT
+#endif
+
 enum {
 	REG_A, REG_F, REG_B, REG_C,
 	REG_D, REG_E, REG_H, REG_L,
@@ -152,6 +160,8 @@ int main(int argc, char **argv) {
 	tk.data = buf;
 
 	int token_count = 0;
+	int instruction_count = 0;
+	int prev = -1;
 	int no_errors = 1;
 	while (*tk.data) {
 		token t = tokenizer_get_next(&tk);
@@ -159,17 +169,28 @@ int main(int argc, char **argv) {
 			fprintf(stderr, "%s\n", t.err);
 			no_errors = 0;
 		}
+		if (t.type == TOKEN_SYM && t.row != prev) {
+			instruction_count ++;
+			prev = t.row;
+		}
 		token_count ++;
 	}
 
+	tk.row = 0;
+	tk.col = 0;
 	tk.data = buf;
 	int token_index = 0;
 	token *token_table = malloc(sizeof(token) * token_count);
 	while (*tk.data)
 		token_table[token_index++] = tokenizer_get_next(&tk);
 
+	struct immap {
+		int mp, ti, bc;
+	} *ins_to_mem_map = malloc(sizeof(*ins_to_mem_map) * instruction_count);
+
 	// Parse tokens
 
+	int instruction_index = 0;
 	token_index = 0;
 	while (token_index < token_count && no_errors) {
 		if (token_table[token_index].type == TOKEN_EOI || token_table[token_index].type == TOKEN_CMT) {
@@ -187,6 +208,9 @@ int main(int argc, char **argv) {
 			no_errors = 0;
 			break;
 		}
+
+		ins_to_mem_map[instruction_index].ti = token_index;
+		ins_to_mem_map[instruction_index].mp = get_load_pos();
 
 		if (token_table[token_index + 1].type == TOKEN_COL) {
 			token label = token_table[token_index];
@@ -220,6 +244,9 @@ int main(int argc, char **argv) {
 			no_errors = 0;
 			break;
 		}
+
+		ins_to_mem_map[instruction_index].bc = get_load_pos() - ins_to_mem_map[instruction_index].mp;
+		instruction_index ++;
 	}
 
 	// Resolve forward references
@@ -233,22 +260,117 @@ int main(int argc, char **argv) {
 		}
 	}
 
+
 	// Print instructions
+
+	prev = -1;
+	instruction_index = 0;
+
+#if defined(_WIN32) || defined(_WIN64)
+	HANDLE  hndl;
+	CONSOLE_SCREEN_BUFFER_INFO csbi;
+	hndl = GetStdHandle(STD_OUTPUT_HANDLE);
+	GetConsoleScreenBufferInfo(hndl, &csbi );
+	#define BLACK   SetConsoleTextAttribute(hndl, 0)
+	#define BLUE    SetConsoleTextAttribute(hndl, 1)
+	#define GREEN   SetConsoleTextAttribute(hndl, 2)
+	#define CYAN    SetConsoleTextAttribute(hndl, 3)
+	#define RED     SetConsoleTextAttribute(hndl, 4)
+	#define PURPLE  SetConsoleTextAttribute(hndl, 5)
+	#define BROWN   SetConsoleTextAttribute(hndl, 6)
+	#define LGRAY   SetConsoleTextAttribute(hndl, 7)
+	#define DGRAY   SetConsoleTextAttribute(hndl, 8)
+	#define LBLUE   SetConsoleTextAttribute(hndl, 9)
+	#define LGREEN  SetConsoleTextAttribute(hndl, 10)
+	#define LCYAN   SetConsoleTextAttribute(hndl, 11)
+	#define LRED    SetConsoleTextAttribute(hndl, 12)
+	#define LPURPLE SetConsoleTextAttribute(hndl, 13)
+	#define YELLOW  SetConsoleTextAttribute(hndl, 14)
+	#define WHITE   SetConsoleTextAttribute(hndl, 15)
+	#define CRESET  SetConsoleTextAttribute(hndl, csbi.wAttributes)
+#else
+	#define BLACK   printf("\e[0;30m")
+	#define BLUE    printf("\e[0;34m")
+	#define GREEN   printf("\e[0;32m")
+	#define CYAN    printf("\e[0;36m")
+	#define RED     printf("\e[0;31m")
+	#define PURPLE  printf("\e[0;35m")
+	#define BROWN   printf("\e[0;33m")
+	#define LGRAY   printf("\e[0;37m")
+	#define DGRAY   printf("\e[1;30m")
+	#define LBLUE   printf("\e[1;34m")
+	#define LGREEN  printf("\e[1;32m")
+	#define LCYAN   printf("\e[1;36m")
+	#define LRED    printf("\e[1;31m")
+	#define LPURPLE printf("\e[1;35m")
+	#define YELLOW  printf("\e[1;33m")
+	#define WHITE   printf("\e[1;37m")
+	#define CRESET  printf("\e[0m")
+#endif
 
 	for (token_index = 0; token_index < token_count && no_errors; token_index ++) {
 		token t = token_table[token_index];
-		if (t.type == TOKEN_CMT || t.type == TOKEN_EOI)
-			putchar('\n');
-		else if (t.type == TOKEN_COM)
-			printf("\b, ");
-		else if (t.type == TOKEN_COL)
-			printf("\b: ");
-		else {
-			char *v = token_val_str(t);
-			printf("%s ", v);
-			free(v);
+
+		if (t.row != prev) {
+			if (t.type == TOKEN_SYM || t.type == TOKEN_INS) {
+				struct immap a = ins_to_mem_map[instruction_index];
+				putchar('\n');
+                CYAN;
+				printf(" %.4XH", a.mp);
+                CRESET;
+				printf(" | ");
+
+				GREEN;
+				for (int i = a.mp; i < a.mp + a.bc; i++)
+					printf("%.2X ", memory[i]);
+				CRESET;
+				printf("%*s| ", 9 - 3 * a.bc, "");
+
+				prev = t.row;
+				instruction_index ++;
+			} else if (t.type == TOKEN_CMT){
+                LGRAY;
+				printf("\n;%.*s", t.len, t.cmt);
+                CRESET;
+				continue;
+			}
+		}
+
+		switch (t.type) {
+			case TOKEN_COM:
+				printf(", "); break;
+			case TOKEN_COL:
+				printf(": "); break;
+			case TOKEN_SYM:
+                BROWN;
+				printf("%.*s ", t.len, t.sym);
+                CRESET; break;
+			case TOKEN_INS:
+                RED;
+				printf("%.*s ", t.len, t.sym);
+                CRESET; break;
+			case TOKEN_REG:
+			case TOKEN_REP:
+                PURPLE;
+				printf("%.*s ", t.len, t.sym);
+                CRESET; break;
+			case TOKEN_WRD:
+                BLUE;
+				printf("%.2XH ", t.num);
+                CRESET; break;
+			case TOKEN_DWD:
+                BLUE;
+				printf("%.4XH ", t.num);
+                CRESET; break;
+			case TOKEN_CMT:
+                DGRAY;
+				printf(";%.*s", t.len, t.cmt);
+                CRESET; break;
+			default: break;
 		}
 	}
+	putchar('\n');
+	putchar('\n');
 
 	// Execution
 
