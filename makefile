@@ -1,2 +1,2 @@
-all: *.c *.h
-	cc *.c -o ya8085sim
+all: *.cpp *.h
+	c++ *.cpp -o ya8085sim

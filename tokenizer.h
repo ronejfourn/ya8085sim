@@ -2,7 +2,7 @@ typedef struct lenstring lenstring;
 typedef struct tokenizer tokenizer;
 typedef struct token     token;
 
-char *token_name(int type);
+const char *token_name(int type);
 char *token_val_str(token t);
 token tokenizer_get_next (tokenizer *tk);
 token tokenizer_peek_next (tokenizer *tk);
@@ -19,9 +19,9 @@ enum {
 struct token {
 	int type;
 	union {
-		char *sym;
-		char *err;
-		char *cmt;
+		const char *sym;
+		const char *err;
+		const char *cmt;
 		unsigned int num;
 	};
 	int row, col, len;

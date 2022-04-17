@@ -150,7 +150,7 @@ lenstring tokenizer_peek_line(tokenizer *tk){
 	return t;
 }
 
-char *token_name(int type) {
+const char *token_name(int type) {
 	switch (type) {
 		case TOKEN_INS: return "instruction";
 		case TOKEN_REG: return "register";

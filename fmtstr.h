@@ -3,7 +3,7 @@
 #include <stdlib.h>
 #include <stdarg.h>
 
-static char *fmtstr (char *fmt, ...) {
+static char *fmtstr (const char *fmt, ...) {
 	va_list va, vc;
 	va_start(va, fmt);
 	va_copy(vc, va);

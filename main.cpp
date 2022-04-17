@@ -124,7 +124,7 @@ char *read_entire_file(char *fname) {
 	int fs = ftell(inf);
 	rewind(inf);
 
-	char *buf = malloc(fs + 1);
+	char *buf = (char *)malloc(fs + 1);
 	if (!buf) {
 		fprintf(stderr, "out of memory\n");
 		fclose(inf);
@@ -180,13 +180,13 @@ int main(int argc, char **argv) {
 	tk.col = 0;
 	tk.data = buf;
 	int token_index = 0;
-	token *token_table = malloc(sizeof(token) * token_count);
+	token *token_table = (token *)malloc(sizeof(token) * token_count);
 	while (*tk.data)
 		token_table[token_index++] = tokenizer_get_next(&tk);
 
 	struct immap {
 		int mp, ti, bc;
-	} *ins_to_mem_map = malloc(sizeof(*ins_to_mem_map) * instruction_count);
+	} *ins_to_mem_map = (struct immap*)malloc(sizeof(*ins_to_mem_map) * instruction_count);
 
 	// Parse tokens
 

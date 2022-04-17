@@ -19,10 +19,10 @@ typedef struct lenstring {
 	size_t len;
 } lenstring;
 
-static inline lenstring ls_from_cstr(char *str) {
+static inline lenstring ls_from_cstr(const char *str) {
 	return (lenstring) {str, strlen(str)};
 }
 
-static inline lenstring ls_from_parts(char *str, size_t len) {
+static inline lenstring ls_from_parts(const char *str, size_t len) {
 	return (lenstring) {str, len};
 }

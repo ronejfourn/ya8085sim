@@ -95,7 +95,7 @@ static void *hash_table_get(hash_table *table, lenstring key) {
 }
 
 static hash_table *hash_table_new (int size) {
-	char *tmp = calloc(1, sizeof(hash_table) * size + sizeof(int));
+	char *tmp = (char *)calloc(1, sizeof(hash_table) * size + sizeof(int));
 	int *a = (int *)tmp;
 	*a = size;
 	return (hash_table *)(tmp + sizeof(int));

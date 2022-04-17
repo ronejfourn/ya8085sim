@@ -24,7 +24,7 @@ int get_load_pos() {return loadat + offset;}
 void set_loadat(uint16_t v) {loadat = v;}
 
 void symbol_queue_init() {
-	sq.data  = malloc(sizeof(*sq.data) * 8);
+	sq.data  = (typeof(sq.data))malloc(sizeof(*sq.data) * 8);
 	sq.cap   = 8;
 	sq.count = 0;
 }
@@ -32,9 +32,9 @@ void symbol_queue_init() {
 void symbol_queue(token t) {
 	if (sq.count == sq.cap) {
 		sq.cap ++;
-		sq.data = realloc(sq.data, sq.cap * sizeof(*sq.data));
+		sq.data = (typeof(sq.data))realloc(sq.data, sq.cap * sizeof(*sq.data));
 	}
-	sq.data[sq.count].key  = (lenstring) {t.sym, t.len};
+	sq.data[sq.count].key  = (lenstring) {t.sym, (size_t)t.len};
 	sq.data[sq.count].r = t.row;
 	sq.data[sq.count].c = t.col;
 	sq.data[sq.count].i = loadat + offset;
@@ -225,7 +225,7 @@ char *load_lxi(lenstring n, token *tk, int *ti) {
 		char *msg = load_opcode(ls_from_cstr(k), tk, ti);
 		if (msg) return msg;
 
-		int64_t p = (int64_t)symbol_table_get((lenstring) {a.sym, a.len});
+		int64_t p = (int64_t)symbol_table_get((lenstring) {a.sym, (size_t)a.len});
 		if (p != -1) {
 			memory[loadat + offset++] = (p >> 0) & 0xFF;
 			memory[loadat + offset++] = (p >> 8) & 0xFF;
@@ -435,7 +435,7 @@ char *load_imm_dw(lenstring n, token *tk, int *ti) {
 		char *msg = load_opcode(ls_from_cstr(k), tk, ti);
 		if (msg) return msg;
 
-		int64_t p = (int64_t)symbol_table_get((lenstring) {a.sym, a.len});
+		int64_t p = (int64_t)symbol_table_get((lenstring) {a.sym, (size_t)a.len});
 		if (p != -1) {
 			memory[loadat + offset++] = (p >> 0) & 0xFF;
 			memory[loadat + offset++] = (p >> 8) & 0xFF;
