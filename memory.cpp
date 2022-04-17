@@ -11,11 +11,6 @@ uint8_t memory[0x10000];
 static uint16_t loadat;
 static uint16_t offset;
 
-struct sqdata{
-	lenstring key;
-	int r, c, i;
-};
-
 struct {
 	int count, cap;
 	sqdata *data;
@@ -43,15 +38,14 @@ void symbol_queue(token t) {
 	sq.count ++;
 }
 
-char *symbol_resolve() {
+sqdata *symbol_resolve() {
 	for (int i = 0; i < sq.count; i++) {
 		int64_t p = (int64_t)symbol_table_get(sq.data[i].key);
 		if (p != -1) {
 			memory[sq.data[i].i    ] = (p >> 0) & 0xFF;
 			memory[sq.data[i].i + 1] = (p >> 8) & 0xFF;
 		} else {
-			return fmtstr("at [%i:%i] unknown symbol '%.*s'",
-					sq.data[i].r, sq.data[i].c, sq.data[i].key.len, sq.data[i].key.data);
+			return &sq.data[i];
 		}
 	}
 	return NULL;

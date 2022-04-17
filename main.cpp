@@ -2,6 +2,7 @@
 #include "memory.h"
 #include "tables.h"
 #include "iset.h"
+#include "fmtstr.h"
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -179,10 +180,13 @@ int main(int argc, char **argv) {
 	int instruction_count = 0;
 	int prev = -1;
 	int no_errors = 1;
+	char *error_msg = nullptr;
+	int error_row;
 	while (*tk.data) {
 		token t = tokenizer_get_next(&tk);
 		if (t.type == TOKEN_ERR) {
-			fprintf(stderr, "%s\n", t.err);
+			error_msg = fmtstr("at [%i:%i] %s \n", t.row, t.col, t.err);
+			error_row = t.row;
 			no_errors = 0;
 		}
 		if (t.type == TOKEN_SYM && t.row != prev) {
@@ -217,9 +221,10 @@ int main(int argc, char **argv) {
 		if (token_table[token_index].type != TOKEN_SYM) {
 			token bad_token = token_table[token_index];
 			char *token_str = token_val_str(bad_token);
-			fprintf(stderr, "at [%i:%i] expected symbol, got '%s' (%s)\n",
+			error_msg = fmtstr("at [%i:%i] expected symbol, got '%s' (%s)\n",
 					bad_token.row, bad_token.col,
 					token_str, token_name(bad_token.type));
+			error_row = bad_token.row;
 			free(token_str);
 			no_errors = 0;
 			break;
@@ -230,11 +235,12 @@ int main(int argc, char **argv) {
 
 		if (token_table[token_index + 1].type == TOKEN_COL) {
 			token label = token_table[token_index];
-			char *error = symbol_table_add(ls_from_parts(label.sym, label.len), get_load_pos());
-			if (error) {
-				fprintf(stderr, "at [%i:%i] %s\n",
-						label.row, label.col, error);
-				free(error);
+			char *err = symbol_table_add(ls_from_parts(label.sym, label.len), get_load_pos());
+			if (err) {
+				error_row = label.row;
+				error_msg = fmtstr("at [%i:%i] %s\n",
+						label.row, label.col, err);
+				free(err);
 				no_errors = 0;
 				break;
 			}
@@ -242,7 +248,8 @@ int main(int argc, char **argv) {
 			if (token_table[token_index + 1].type != TOKEN_SYM) {
 				token bad_token = token_table[token_index];
 				char *token_str = token_val_str(bad_token);
-				fprintf(stderr, "at [%i:%i] expected instruction, got '%s' (%s)\n",
+				error_row = bad_token.row;
+				error_msg = fmtstr("at [%i:%i] expected instruction, got '%s' (%s)\n",
 						bad_token.row, bad_token.col,
 						token_str, token_name(bad_token.type));
 				free(token_str);
@@ -253,10 +260,11 @@ int main(int argc, char **argv) {
 		}
 
 		token instruction = token_table[token_index];
-		char *error = load_instruction(ls_from_parts(instruction.sym, instruction.len), token_table, &token_index);
-		if (error) {
-			fprintf(stderr, "at [%i:%i] '%s'\n", token_table[token_index].row, token_table[token_index].col, error);
-			free(error);
+		char *err = load_instruction(ls_from_parts(instruction.sym, instruction.len), token_table, &token_index);
+		if (err) {
+			error_row = instruction.row;
+			error_msg = fmtstr("at [%i:%i] '%s'\n", instruction.row, instruction.col, err);
+			free(err);
 			no_errors = 0;
 			break;
 		}
@@ -268,11 +276,12 @@ int main(int argc, char **argv) {
 	// Resolve forward references
 
 	if (no_errors) {
-		char *error = symbol_resolve();
-		if (error) {
+		sqdata *badsym = symbol_resolve();
+		if (badsym) {
 			no_errors = 0;
-			fprintf(stderr, "%s\n", error);
-			free(error);
+			error_msg = fmtstr("at [%i:%i] unknown symbol '%.*s'",
+					badsym->r, badsym->c, badsym->key.len, badsym->key.data);
+			error_row = badsym->r;
 		}
 	}
 
@@ -325,7 +334,7 @@ int main(int argc, char **argv) {
     // Our state
     ImVec4 clear_color = ImVec4(0.45f, 0.55f, 0.60f, 1.00f);
 
-	char program_should_run = 0;
+	char program_should_run = 1;
 	uint16_t PC = get_loadat();
 	uint16_t SP = 0xFFFF;
 	uint16_t WZ = 0x0000;
@@ -350,22 +359,35 @@ int main(int argc, char **argv) {
         ImGui::NewFrame();
 
 		ImGui::DockSpaceOverViewport(ImGui::GetMainViewport());
+
+		ImGui::ShowDemoWindow();
 		ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 5.0f);
 
 		ImGui::Begin("Listing");
-		instruction_index = 0;
         if (ImGui::BeginTable("##memory", 3, flags)) {
 			ImGui::TableSetupColumn("Address (Hex)");
 			ImGui::TableSetupColumn("Opcode");
 			ImGui::TableSetupColumn("Assembly");
 			ImGui::TableHeadersRow();
 
-			for (token_index = 0; token_index < token_count && no_errors; token_index ++) {
-				token t = token_table[token_index];
+			int iindex = 0;
+			for (int tindex = 0; tindex < token_count; tindex ++) {
+				token t = token_table[tindex];
 				ImGui::TableNextRow();
 
 				if (t.type == TOKEN_SYM || t.type == TOKEN_INS) {
-					struct immap a = ins_to_mem_map[instruction_index];
+					struct immap a = ins_to_mem_map[iindex];
+
+					if (a.mp == PC && no_errors) {
+						ImU32 row_bg_color = ImGui::GetColorU32(ImVec4(0.3f, 0.7f, 0.3f, 0.65f));
+						ImGui::TableSetBgColor(ImGuiTableBgTarget_RowBg0 + (t.row & 1), row_bg_color);
+					}
+
+					if (t.row == error_row && !no_errors) {
+						ImU32 row_bg_color = ImGui::GetColorU32(ImVec4(0.7f, 0.3f, 0.3f, 0.65f));
+						ImGui::TableSetBgColor(ImGuiTableBgTarget_RowBg0 + (t.row & 1), row_bg_color);
+					}
+
 					ImGui::TableSetColumnIndex(0);
 					ImGui::TextColored(ImVec4(HEX2NORM(0x98BB6C), 1.0f), "%.4XH", a.mp);
 
@@ -380,7 +402,7 @@ int main(int argc, char **argv) {
 
 					prev = t.row;
 					ImGui::TableSetColumnIndex(2);
-					while (t.row == prev && token_index < token_count) {
+					while (t.row == prev && tindex < token_count) {
 						switch (t.type) {
 							case TOKEN_COM:
 								ImGui::Text(","); break;
@@ -402,11 +424,11 @@ int main(int argc, char **argv) {
 							default: break;
 						}
 						ImGui::SameLine();
-						t = token_table[++token_index];
+						t = token_table[++tindex];
 					}
 
-					token_index --;
-					instruction_index ++;
+					tindex --;
+					iindex ++;
 				} else if (t.type == TOKEN_CMT){
 					ImGui::TableSetColumnIndex(2);
 					ImGui::TextColored(ImVec4(HEX2NORM(0x727169), 1.0f), ";%.*s", t.len, t.cmt);
@@ -567,45 +589,6 @@ int main(int argc, char **argv) {
 		}
 		ImGui::End();
 
-		ImGui::Begin("Memory");
-		{
-            ImGuiWindowFlags window_flags = ImGuiWindowFlags_None;
-            ImGui::BeginChild("##memoryT", ImVec2(0, 68), true, window_flags);
-
-			ImGui::Text("Start (Hex)");
-			ImGui::SameLine();
-			ImGui::InputScalar("##memhex", ImGuiDataType_U16, &memstart, NULL, NULL, "%x");
-			ImGui::Text("Start (Dec)");
-			ImGui::SameLine();
-			ImGui::InputScalar("##memdec", ImGuiDataType_U16, &memstart, NULL, NULL, "%u");
-
-            ImGui::EndChild();
-            ImGui::BeginChild("##memoryB", ImVec2(0, 0), true, window_flags);
-
-			int memend = memstart + 0x100 < 0x10000 ? memstart + 0x100 : 0x10000;
-			if (ImGui::BeginTable("##memory", 4, flags)) {
-				ImGui::TableSetupColumn("Address (Hex)");
-				ImGui::TableSetupColumn("Address (Dec)");
-				ImGui::TableSetupColumn("Data (Hex)");
-				ImGui::TableSetupColumn("Data (Dec)");
-				ImGui::TableHeadersRow();
-				for (int row = memstart; row < memend; row++) {
-					ImGui::TableNextRow();
-					ImGui::TableSetColumnIndex(0);
-					ImGui::Text("%.4XH", row);
-					ImGui::TableSetColumnIndex(1);
-					ImGui::Text("%d", row);
-					ImGui::TableSetColumnIndex(2);
-					ImGui::Text("%.2XH", memory[row]);
-					ImGui::TableSetColumnIndex(3);
-					ImGui::Text("%d", memory[row]);
-				}
-				ImGui::EndTable();
-			}
-            ImGui::EndChild();
-		}
-		ImGui::End();
-
 		ImGui::Begin("IO Ports");
 		{
             ImGuiWindowFlags window_flags = ImGuiWindowFlags_None;
@@ -645,7 +628,48 @@ int main(int argc, char **argv) {
 		}
 		ImGui::End();
 
+		ImGui::Begin("Memory");
+		{
+            ImGuiWindowFlags window_flags = ImGuiWindowFlags_None;
+            ImGui::BeginChild("##memoryT", ImVec2(0, 68), true, window_flags);
+
+			ImGui::Text("Start (Hex)");
+			ImGui::SameLine();
+			ImGui::InputScalar("##memhex", ImGuiDataType_U16, &memstart, NULL, NULL, "%x");
+			ImGui::Text("Start (Dec)");
+			ImGui::SameLine();
+			ImGui::InputScalar("##memdec", ImGuiDataType_U16, &memstart, NULL, NULL, "%u");
+
+            ImGui::EndChild();
+            ImGui::BeginChild("##memoryB", ImVec2(0, 0), true, window_flags);
+
+			int memend = memstart + 0x100 < 0x10000 ? memstart + 0x100 : 0x10000;
+			if (ImGui::BeginTable("##memory", 4, flags)) {
+				ImGui::TableSetupColumn("Address (Hex)");
+				ImGui::TableSetupColumn("Address (Dec)");
+				ImGui::TableSetupColumn("Data (Hex)");
+				ImGui::TableSetupColumn("Data (Dec)");
+				ImGui::TableHeadersRow();
+				for (int row = memstart; row < memend; row++) {
+					ImGui::TableNextRow();
+					ImGui::TableSetColumnIndex(0);
+					ImGui::Text("%.4XH", row);
+					ImGui::TableSetColumnIndex(1);
+					ImGui::Text("%d", row);
+					ImGui::TableSetColumnIndex(2);
+					ImGui::Text("%.2XH", memory[row]);
+					ImGui::TableSetColumnIndex(3);
+					ImGui::Text("%d", memory[row]);
+				}
+				ImGui::EndTable();
+			}
+            ImGui::EndChild();
+		}
+		ImGui::End();
+
 		ImGui::Begin("Assembler");
+		if (error_msg)
+			ImGui::Text("%s", error_msg);
 		ImGui::End();
 		ImGui::PopStyleVar();
 
@@ -1240,7 +1264,9 @@ int main(int argc, char **argv) {
 			++PC; break;
 
 		default:
-			fprintf(stderr, "[FATAL] unexpected opcode %0x\n", memory[PC]);
+			if (error_msg)
+				free(error_msg);
+			error_msg = fmtstr("[FATAL] unexpected opcode %0x\n", memory[PC]);
 			program_should_run = 0;
 			break;
 		}
