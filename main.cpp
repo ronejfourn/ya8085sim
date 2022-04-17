@@ -9,6 +9,7 @@
 #include "imgui_impl_glfw.h"
 #include "imgui_impl_opengl3.h"
 #include <GLFW/glfw3.h>
+#include "hack_embed.h"
 
 #define HEX2NORM(hx) ((((hx) >> 16) & 0xff) / 255.0), ((((hx) >> 8) & 0xff) / 255.0), ((((hx) >> 0) & 0xff) / 255.0)
 
@@ -315,6 +316,8 @@ int main(int argc, char **argv) {
         style.Colors[ImGuiCol_WindowBg].w = 1.0f;
     }
 
+    io.Fonts->AddFontFromMemoryCompressedTTF(base85_compressed_data, base85_compressed_size, 18.0f);
+
     // Setup Platform/Renderer backends
     ImGui_ImplGlfw_InitForOpenGL(window, true);
     ImGui_ImplOpenGL3_Init(glsl_version);
@@ -417,7 +420,7 @@ int main(int argc, char **argv) {
 		{
 			float h = ImGui::GetContentRegionAvail().y * 0.75f;
             ImGuiWindowFlags window_flags = ImGuiWindowFlags_None;
-            ImGui::BeginChild("##rfL", ImVec2(ImGui::GetContentRegionAvail().x * 0.25f, h), true, window_flags);
+            ImGui::BeginChild("##rfL", ImVec2(ImGui::GetContentRegionAvail().x * 0.4f, h), true, window_flags);
 			ImGui::Text("Flags");
 			if (ImGui::BeginTable("Flags", 2)) {
 				ImGui::TableSetupColumn("Name");
@@ -526,7 +529,7 @@ int main(int argc, char **argv) {
 		ImGui::Begin("Stack");
 		{
             ImGuiWindowFlags window_flags = ImGuiWindowFlags_None;
-            ImGui::BeginChild("##stackT", ImVec2(0, 58), true, window_flags);
+            ImGui::BeginChild("##stackT", ImVec2(0, 68), true, window_flags);
 
 			ImGui::Text("Start (Hex)");
 			ImGui::SameLine();
@@ -567,7 +570,7 @@ int main(int argc, char **argv) {
 		ImGui::Begin("Memory");
 		{
             ImGuiWindowFlags window_flags = ImGuiWindowFlags_None;
-            ImGui::BeginChild("##memoryT", ImVec2(0, 58), true, window_flags);
+            ImGui::BeginChild("##memoryT", ImVec2(0, 68), true, window_flags);
 
 			ImGui::Text("Start (Hex)");
 			ImGui::SameLine();
@@ -606,7 +609,7 @@ int main(int argc, char **argv) {
 		ImGui::Begin("IO Ports");
 		{
             ImGuiWindowFlags window_flags = ImGuiWindowFlags_None;
-            ImGui::BeginChild("##ioT", ImVec2(0, 58), true, window_flags);
+            ImGui::BeginChild("##ioT", ImVec2(0, 68), true, window_flags);
 
 			ImGui::Text("Start (Hex)");
 			ImGui::SameLine();
