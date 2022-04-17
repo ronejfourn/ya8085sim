@@ -11,12 +11,14 @@ uint8_t memory[0x10000];
 static uint16_t loadat;
 static uint16_t offset;
 
+struct sqdata{
+	lenstring key;
+	int r, c, i;
+};
+
 struct {
 	int count, cap;
-	struct {
-		lenstring key;
-		int r, c, i;
-	} *data;
+	sqdata *data;
 } sq;
 
 int get_loadat() {return loadat;}
@@ -24,7 +26,7 @@ int get_load_pos() {return loadat + offset;}
 void set_loadat(uint16_t v) {loadat = v;}
 
 void symbol_queue_init() {
-	sq.data  = (typeof(sq.data))malloc(sizeof(*sq.data) * 8);
+	sq.data  = (sqdata *)malloc(sizeof(*sq.data) * 8);
 	sq.cap   = 8;
 	sq.count = 0;
 }
@@ -32,7 +34,7 @@ void symbol_queue_init() {
 void symbol_queue(token t) {
 	if (sq.count == sq.cap) {
 		sq.cap ++;
-		sq.data = (typeof(sq.data))realloc(sq.data, sq.cap * sizeof(*sq.data));
+		sq.data = (sqdata *)realloc(sq.data, sq.cap * sizeof(*sq.data));
 	}
 	sq.data[sq.count].key  = (lenstring) {t.sym, (size_t)t.len};
 	sq.data[sq.count].r = t.row;

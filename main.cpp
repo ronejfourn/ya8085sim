@@ -5,6 +5,13 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+#include "imgui.h"
+#include "imgui_impl_glfw.h"
+#include "imgui_impl_opengl3.h"
+#include <GLFW/glfw3.h>
+
+#define HEX2NORM(hx) ((((hx) >> 16) & 0xff) / 255.0), ((((hx) >> 8) & 0xff) / 255.0), ((((hx) >> 0) & 0xff) / 255.0)
+
 #if defined(_WIN32) || defined(_WIN64)
 #define _CRT_SECURE_NO_WARNINGS 1
 #define WIN32_LEAN_AND_MEAN
@@ -59,6 +66,14 @@ extern uint8_t memory[0x10000];
 #define SET(f, b) ((f) |= (b))
 #define RESET(f, b) ((f) &= ~(b))
 #define TOGGLE(f, b) ((f) ^= (b))
+
+static void glfw_error_callback(int error, const char* description) {
+    fprintf(stderr, "Glfw Error %d: %s\n", error, description);
+}
+
+static void glfw_framebuffer_size_callback(GLFWwindow *window, int w, int h) {
+	glViewport(0, 0, w, h);
+}
 
 uint8_t ALU(uint8_t op1, uint8_t op2, char op, uint8_t cc) {
 	uint8_t res;
@@ -261,118 +276,51 @@ int main(int argc, char **argv) {
 	}
 
 
-	// Print instructions
+    // Setup window
+    glfwSetErrorCallback(glfw_error_callback);
+    if (!glfwInit())
+        return 1;
 
-	prev = -1;
-	instruction_index = 0;
-
-#if defined(_WIN32) || defined(_WIN64)
-	HANDLE  hndl;
-	CONSOLE_SCREEN_BUFFER_INFO csbi;
-	hndl = GetStdHandle(STD_OUTPUT_HANDLE);
-	GetConsoleScreenBufferInfo(hndl, &csbi );
-	#define BLACK   SetConsoleTextAttribute(hndl, 0)
-	#define BLUE    SetConsoleTextAttribute(hndl, 1)
-	#define GREEN   SetConsoleTextAttribute(hndl, 2)
-	#define CYAN    SetConsoleTextAttribute(hndl, 3)
-	#define RED     SetConsoleTextAttribute(hndl, 4)
-	#define PURPLE  SetConsoleTextAttribute(hndl, 5)
-	#define BROWN   SetConsoleTextAttribute(hndl, 6)
-	#define LGRAY   SetConsoleTextAttribute(hndl, 7)
-	#define DGRAY   SetConsoleTextAttribute(hndl, 8)
-	#define LBLUE   SetConsoleTextAttribute(hndl, 9)
-	#define LGREEN  SetConsoleTextAttribute(hndl, 10)
-	#define LCYAN   SetConsoleTextAttribute(hndl, 11)
-	#define LRED    SetConsoleTextAttribute(hndl, 12)
-	#define LPURPLE SetConsoleTextAttribute(hndl, 13)
-	#define YELLOW  SetConsoleTextAttribute(hndl, 14)
-	#define WHITE   SetConsoleTextAttribute(hndl, 15)
-	#define CRESET  SetConsoleTextAttribute(hndl, csbi.wAttributes)
-#else
-	#define BLACK   printf("\e[0;30m")
-	#define BLUE    printf("\e[0;34m")
-	#define GREEN   printf("\e[0;32m")
-	#define CYAN    printf("\e[0;36m")
-	#define RED     printf("\e[0;31m")
-	#define PURPLE  printf("\e[0;35m")
-	#define BROWN   printf("\e[0;33m")
-	#define LGRAY   printf("\e[0;37m")
-	#define DGRAY   printf("\e[1;30m")
-	#define LBLUE   printf("\e[1;34m")
-	#define LGREEN  printf("\e[1;32m")
-	#define LCYAN   printf("\e[1;36m")
-	#define LRED    printf("\e[1;31m")
-	#define LPURPLE printf("\e[1;35m")
-	#define YELLOW  printf("\e[1;33m")
-	#define WHITE   printf("\e[1;37m")
-	#define CRESET  printf("\e[0m")
+    // GL 3.0 + GLSL 130
+    const char* glsl_version = "#version 130";
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
+    glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+#if defined(__APPLE__)
+	glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);
 #endif
 
-	for (token_index = 0; token_index < token_count && no_errors; token_index ++) {
-		token t = token_table[token_index];
+    // Create window with graphics context
+    GLFWwindow* window = glfwCreateWindow(1280, 720, "Dear ImGui GLFW+OpenGL3 example", NULL, NULL);
+    if (window == NULL)
+        return 1;
+    glfwMakeContextCurrent(window);
+	glfwSetFramebufferSizeCallback(window, glfw_framebuffer_size_callback);
+    glfwSwapInterval(1); // Enable vsync
 
-		if (t.row != prev) {
-			if (t.type == TOKEN_SYM || t.type == TOKEN_INS) {
-				struct immap a = ins_to_mem_map[instruction_index];
-				putchar('\n');
-                CYAN;
-				printf(" %.4XH", a.mp);
-                CRESET;
-				printf(" | ");
+    // Setup Dear ImGui context
+    IMGUI_CHECKVERSION();
+    ImGui::CreateContext();
+    ImGuiIO& io = ImGui::GetIO(); (void)io;
+    io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;       // Enable Keyboard Controls
+    io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;           // Enable Docking
 
-				GREEN;
-				for (int i = a.mp; i < a.mp + a.bc; i++)
-					printf("%.2X ", memory[i]);
-				CRESET;
-				printf("%*s| ", 9 - 3 * a.bc, "");
+    // Setup Dear ImGui style
+    ImGui::StyleColorsDark();
 
-				prev = t.row;
-				instruction_index ++;
-			} else if (t.type == TOKEN_CMT){
-                LGRAY;
-				printf("\n;%.*s", t.len, t.cmt);
-                CRESET;
-				continue;
-			}
-		}
+    // When viewports are enabled we tweak WindowRounding/WindowBg so platform windows can look identical to regular ones.
+    ImGuiStyle& style = ImGui::GetStyle();
+    if (io.ConfigFlags & ImGuiConfigFlags_ViewportsEnable) {
+        style.WindowRounding = 0.0f;
+        style.Colors[ImGuiCol_WindowBg].w = 1.0f;
+    }
 
-		switch (t.type) {
-			case TOKEN_COM:
-				printf(", "); break;
-			case TOKEN_COL:
-				printf(": "); break;
-			case TOKEN_SYM:
-                BROWN;
-				printf("%.*s ", t.len, t.sym);
-                CRESET; break;
-			case TOKEN_INS:
-                RED;
-				printf("%.*s ", t.len, t.sym);
-                CRESET; break;
-			case TOKEN_REG:
-			case TOKEN_REP:
-                PURPLE;
-				printf("%.*s ", t.len, t.sym);
-                CRESET; break;
-			case TOKEN_WRD:
-                BLUE;
-				printf("%.2XH ", t.num);
-                CRESET; break;
-			case TOKEN_DWD:
-                BLUE;
-				printf("%.4XH ", t.num);
-                CRESET; break;
-			case TOKEN_CMT:
-                DGRAY;
-				printf(";%.*s", t.len, t.cmt);
-                CRESET; break;
-			default: break;
-		}
-	}
-	putchar('\n');
-	putchar('\n');
+    // Setup Platform/Renderer backends
+    ImGui_ImplGlfw_InitForOpenGL(window, true);
+    ImGui_ImplOpenGL3_Init(glsl_version);
 
-	// Execution
+    // Our state
+    ImVec4 clear_color = ImVec4(0.45f, 0.55f, 0.60f, 1.00f);
 
 	char program_should_run = 0;
 	uint16_t PC = get_loadat();
@@ -385,7 +333,328 @@ int main(int argc, char **argv) {
 	uint8_t numbers[] = { 9, 3, 2, 4, 1 };
 	memcpy(memory + 0x2041, numbers, sizeof(numbers));
 
-	while (program_should_run && no_errors) {
+	static ImGuiTableFlags flags = ImGuiTableFlags_RowBg  | ImGuiTableFlags_Resizable;
+	uint16_t memstart = 0;
+	uint8_t  iostart  = 0;
+	uint16_t stkstart = SP;
+
+    while (!glfwWindowShouldClose(window)) {
+        glfwPollEvents();
+
+        // Start the Dear ImGui frame
+        ImGui_ImplOpenGL3_NewFrame();
+        ImGui_ImplGlfw_NewFrame();
+        ImGui::NewFrame();
+
+		ImGui::DockSpaceOverViewport(ImGui::GetMainViewport());
+		ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 5.0f);
+
+		ImGui::Begin("Listing");
+		instruction_index = 0;
+        if (ImGui::BeginTable("##memory", 3, flags)) {
+			ImGui::TableSetupColumn("Address (Hex)");
+			ImGui::TableSetupColumn("Opcode");
+			ImGui::TableSetupColumn("Assembly");
+			ImGui::TableHeadersRow();
+
+			for (token_index = 0; token_index < token_count && no_errors; token_index ++) {
+				token t = token_table[token_index];
+				ImGui::TableNextRow();
+
+				if (t.type == TOKEN_SYM || t.type == TOKEN_INS) {
+					struct immap a = ins_to_mem_map[instruction_index];
+					ImGui::TableSetColumnIndex(0);
+					ImGui::TextColored(ImVec4(HEX2NORM(0x98BB6C), 1.0f), "%.4XH", a.mp);
+
+					ImGui::TableSetColumnIndex(1);
+					ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(HEX2NORM(0x938AA9), 1.0f));
+					switch (a.bc) {
+						case 1: ImGui::Text("%.2X", memory[a.mp]); break;
+						case 2: ImGui::Text("%.2X %.2X", memory[a.mp], memory[a.mp + 1]); break;
+						case 3: ImGui::Text("%.2X %.2X %.2X", memory[a.mp], memory[a.mp + 1], memory[a.mp + 2]); break;
+					}
+					ImGui::PopStyleColor();
+
+					prev = t.row;
+					ImGui::TableSetColumnIndex(2);
+					while (t.row == prev && token_index < token_count) {
+						switch (t.type) {
+							case TOKEN_COM:
+								ImGui::Text(","); break;
+							case TOKEN_COL:
+								ImGui::Text(":"); break;
+							case TOKEN_SYM:
+								ImGui::TextColored(ImVec4(HEX2NORM(0xE6C384), 1.0f), "%.*s", t.len, t.sym); break;
+							case TOKEN_INS:
+								ImGui::TextColored(ImVec4(HEX2NORM(0x957FB8), 1.0f), "%.*s", t.len, t.sym); break;
+							case TOKEN_REG:
+							case TOKEN_REP:
+								ImGui::TextColored(ImVec4(HEX2NORM(0x7AA89F), 1.0f), "%.*s", t.len, t.sym); break;
+							case TOKEN_WRD:
+								ImGui::TextColored(ImVec4(HEX2NORM(0xD27E99), 1.0f), "%.2XH ", t.num); break;
+							case TOKEN_DWD:
+								ImGui::TextColored(ImVec4(HEX2NORM(0xD27E99), 1.0f), "%.4XH ", t.num); break;
+							case TOKEN_CMT:
+								ImGui::TextColored(ImVec4(HEX2NORM(0x727169), 1.0f), ";%.*s", t.len, t.cmt); break;
+							default: break;
+						}
+						ImGui::SameLine();
+						t = token_table[++token_index];
+					}
+
+					token_index --;
+					instruction_index ++;
+				} else if (t.type == TOKEN_CMT){
+					ImGui::TableSetColumnIndex(2);
+					ImGui::TextColored(ImVec4(HEX2NORM(0x727169), 1.0f), ";%.*s", t.len, t.cmt);
+				}
+			}
+            ImGui::EndTable();
+        }
+
+		ImGui::End();
+		ImGui::Begin("Registers and Flags");
+		{
+			float h = ImGui::GetContentRegionAvail().y * 0.75f;
+            ImGuiWindowFlags window_flags = ImGuiWindowFlags_None;
+            ImGui::BeginChild("##rfL", ImVec2(ImGui::GetContentRegionAvail().x * 0.25f, h), true, window_flags);
+			ImGui::Text("Flags");
+			if (ImGui::BeginTable("Flags", 2)) {
+				ImGui::TableSetupColumn("Name");
+				ImGui::TableSetupColumn("Value");
+				ImGui::TableHeadersRow();
+				ImGui::TableNextRow();
+				ImGui::TableSetColumnIndex(0);
+				ImGui::Text("S");
+				ImGui::TableSetColumnIndex(1);
+				ImGui::Text("%d", (REGISTER(F) & FLAG_S) != 0);
+				ImGui::TableNextRow();
+				ImGui::TableSetColumnIndex(0);
+				ImGui::Text("Z");
+				ImGui::TableSetColumnIndex(1);
+				ImGui::Text("%d", (REGISTER(F) & FLAG_Z) != 0);
+				ImGui::TableNextRow();
+				ImGui::TableSetColumnIndex(0);
+				ImGui::Text("AC");
+				ImGui::TableSetColumnIndex(1);
+				ImGui::Text("%d", (REGISTER(F) & FLAG_AC) != 0);
+				ImGui::TableNextRow();
+				ImGui::TableSetColumnIndex(0);
+				ImGui::Text("P");
+				ImGui::TableSetColumnIndex(1);
+				ImGui::Text("%d", (REGISTER(F) & FLAG_P) != 0);
+				ImGui::TableNextRow();
+				ImGui::TableSetColumnIndex(0);
+				ImGui::Text("CY");
+				ImGui::TableSetColumnIndex(1);
+				ImGui::Text("%d", (REGISTER(F) & FLAG_CY) != 0);
+				ImGui::EndTable();
+			}
+            ImGui::EndChild();
+			ImGui::SameLine();
+            ImGui::BeginChild("##rfR", ImVec2(0, h), true, window_flags);
+			ImGui::Text("Registers");
+			if (ImGui::BeginTable("Registers", 2)) {
+				ImGui::TableSetupColumn("Name");
+				ImGui::TableSetupColumn("Value");
+				ImGui::TableHeadersRow();
+				ImGui::TableNextRow();
+					ImGui::TableSetColumnIndex(0);
+					ImGui::Text("A");
+					ImGui::TableSetColumnIndex(1);
+					ImGui::Text("%.2X", REGISTER(A));
+				ImGui::TableNextRow();
+					ImGui::TableSetColumnIndex(0);
+					ImGui::Text("B");
+					ImGui::TableSetColumnIndex(1);
+					ImGui::Text("%.2X", REGISTER(B));
+				ImGui::TableNextRow();
+					ImGui::TableSetColumnIndex(0);
+					ImGui::Text("C");
+					ImGui::TableSetColumnIndex(1);
+					ImGui::Text("%.2X", REGISTER(C));
+				ImGui::TableNextRow();
+					ImGui::TableSetColumnIndex(0);
+					ImGui::Text("D");
+					ImGui::TableSetColumnIndex(1);
+					ImGui::Text("%.2X", REGISTER(D));
+				ImGui::TableNextRow();
+					ImGui::TableSetColumnIndex(0);
+					ImGui::Text("E");
+					ImGui::TableSetColumnIndex(1);
+					ImGui::Text("%.2X", REGISTER(E));
+				ImGui::TableNextRow();
+					ImGui::TableSetColumnIndex(0);
+					ImGui::Text("F");
+					ImGui::TableSetColumnIndex(1);
+					ImGui::Text("%.2X", REGISTER(F));
+				ImGui::TableNextRow();
+					ImGui::TableSetColumnIndex(0);
+					ImGui::Text("H");
+					ImGui::TableSetColumnIndex(1);
+					ImGui::Text("%.2X", REGISTER(H));
+				ImGui::TableNextRow();
+					ImGui::TableSetColumnIndex(0);
+					ImGui::Text("L");
+					ImGui::TableSetColumnIndex(1);
+					ImGui::Text("%.2X", REGISTER(L));
+				ImGui::EndTable();
+			}
+            ImGui::EndChild();
+            ImGui::BeginChild("##rfB", ImVec2(0, 0), true, window_flags);
+			if (ImGui::BeginTable("Registers", 2)) {
+				ImGui::TableSetupColumn("Name");
+				ImGui::TableSetupColumn("Value");
+				ImGui::TableHeadersRow();
+				ImGui::TableNextRow();
+				ImGui::TableNextRow();
+					ImGui::TableSetColumnIndex(0);
+					ImGui::Text("SP");
+					ImGui::TableSetColumnIndex(1);
+					ImGui::Text("%.4X", SP);
+				ImGui::TableNextRow();
+					ImGui::TableSetColumnIndex(0);
+					ImGui::Text("PC");
+					ImGui::TableSetColumnIndex(1);
+					ImGui::Text("%.4X", PC);
+				ImGui::EndTable();
+			}
+			ImGui::EndChild();
+        }
+		ImGui::End();
+
+		ImGui::Begin("Stack");
+		{
+            ImGuiWindowFlags window_flags = ImGuiWindowFlags_None;
+            ImGui::BeginChild("##stackT", ImVec2(0, 58), true, window_flags);
+
+			ImGui::Text("Start (Hex)");
+			ImGui::SameLine();
+			ImGui::InputScalar("##stkhex", ImGuiDataType_U16, &stkstart, NULL, NULL, "%x");
+			ImGui::Text("Start (Dec)");
+			ImGui::SameLine();
+			ImGui::InputScalar("##stkdec", ImGuiDataType_U16, &stkstart, NULL, NULL, "%u");
+
+			stkstart = (stkstart > SP) ? SP : stkstart;
+
+            ImGui::EndChild();
+            ImGui::BeginChild("##stackB", ImVec2(0, 0), true, window_flags);
+
+			if (ImGui::BeginTable("##stack", 4, flags)) {
+				ImGui::TableSetupColumn("Address (Hex)");
+				ImGui::TableSetupColumn("Address (Dec)");
+				ImGui::TableSetupColumn("Data (Hex)");
+				ImGui::TableSetupColumn("Data (Dec)");
+				ImGui::TableHeadersRow();
+				int stkend = stkstart - 0x100 > 0 ? stkstart - 0x100 : 0;
+				for (int row = stkstart; row >= stkend; row--) {
+					ImGui::TableNextRow();
+					ImGui::TableSetColumnIndex(0);
+					ImGui::Text("%.4XH", row);
+					ImGui::TableSetColumnIndex(1);
+					ImGui::Text("%d",  row);
+					ImGui::TableSetColumnIndex(2);
+					ImGui::Text("%.2XH", memory[row]);
+					ImGui::TableSetColumnIndex(3);
+					ImGui::Text("%d", memory[row]);
+				}
+				ImGui::EndTable();
+			}
+            ImGui::EndChild();
+		}
+		ImGui::End();
+
+		ImGui::Begin("Memory");
+		{
+            ImGuiWindowFlags window_flags = ImGuiWindowFlags_None;
+            ImGui::BeginChild("##memoryT", ImVec2(0, 58), true, window_flags);
+
+			ImGui::Text("Start (Hex)");
+			ImGui::SameLine();
+			ImGui::InputScalar("##memhex", ImGuiDataType_U16, &memstart, NULL, NULL, "%x");
+			ImGui::Text("Start (Dec)");
+			ImGui::SameLine();
+			ImGui::InputScalar("##memdec", ImGuiDataType_U16, &memstart, NULL, NULL, "%u");
+
+            ImGui::EndChild();
+            ImGui::BeginChild("##memoryB", ImVec2(0, 0), true, window_flags);
+
+			int memend = memstart + 0x100 < 0x10000 ? memstart + 0x100 : 0x10000;
+			if (ImGui::BeginTable("##memory", 4, flags)) {
+				ImGui::TableSetupColumn("Address (Hex)");
+				ImGui::TableSetupColumn("Address (Dec)");
+				ImGui::TableSetupColumn("Data (Hex)");
+				ImGui::TableSetupColumn("Data (Dec)");
+				ImGui::TableHeadersRow();
+				for (int row = memstart; row < memend; row++) {
+					ImGui::TableNextRow();
+					ImGui::TableSetColumnIndex(0);
+					ImGui::Text("%.4XH", row);
+					ImGui::TableSetColumnIndex(1);
+					ImGui::Text("%d", row);
+					ImGui::TableSetColumnIndex(2);
+					ImGui::Text("%.2XH", memory[row]);
+					ImGui::TableSetColumnIndex(3);
+					ImGui::Text("%d", memory[row]);
+				}
+				ImGui::EndTable();
+			}
+            ImGui::EndChild();
+		}
+		ImGui::End();
+
+		ImGui::Begin("IO Ports");
+		{
+            ImGuiWindowFlags window_flags = ImGuiWindowFlags_None;
+            ImGui::BeginChild("##ioT", ImVec2(0, 58), true, window_flags);
+
+			ImGui::Text("Start (Hex)");
+			ImGui::SameLine();
+			ImGui::InputScalar("##iohex", ImGuiDataType_U8, &iostart, NULL, NULL, "%x");
+			ImGui::Text("Start (Dec)");
+			ImGui::SameLine();
+			ImGui::InputScalar("##iodec", ImGuiDataType_U8, &iostart, NULL, NULL, "%u");
+
+            ImGui::EndChild();
+            ImGui::BeginChild("##ioB", ImVec2(0, 0), true, window_flags);
+
+			if (ImGui::BeginTable("##io", 4, flags)) {
+				ImGui::TableSetupColumn("Address (Hex)");
+				ImGui::TableSetupColumn("Address (Dec)");
+				ImGui::TableSetupColumn("Data (Hex)");
+				ImGui::TableSetupColumn("Data (Dec)");
+				ImGui::TableHeadersRow();
+
+				for (uint16_t row = iostart; row < 0x100; row++) {
+					ImGui::TableNextRow();
+					ImGui::TableSetColumnIndex(0);
+					ImGui::Text("%.2XH", row);
+					ImGui::TableSetColumnIndex(1);
+					ImGui::Text("%d"  , row);
+					ImGui::TableSetColumnIndex(2);
+					ImGui::Text("%.2XH", IO[row]);
+					ImGui::TableSetColumnIndex(3);
+					ImGui::Text("%d", IO[row]);
+				}
+				ImGui::EndTable();
+			}
+            ImGui::EndChild();
+		}
+		ImGui::End();
+
+		ImGui::Begin("Assembler");
+		ImGui::End();
+		ImGui::PopStyleVar();
+
+        // Rendering
+        ImGui::Render();
+        glClearColor(clear_color.x * clear_color.w, clear_color.y * clear_color.w, clear_color.z * clear_color.w, clear_color.w);
+        glClear(GL_COLOR_BUFFER_BIT);
+        ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+        glfwSwapBuffers(window);
+
+		if (!program_should_run || !no_errors) continue;
+
 		switch (memory[PC]) {
 
 #define PUSH(rp) \
@@ -972,6 +1241,15 @@ int main(int argc, char **argv) {
 			program_should_run = 0;
 			break;
 		}
-	}
+    }
+
+    // Cleanup
+    ImGui_ImplOpenGL3_Shutdown();
+    ImGui_ImplGlfw_Shutdown();
+    ImGui::DestroyContext();
+
+    glfwDestroyWindow(window);
+    glfwTerminate();
+
 	return 0;
 }
