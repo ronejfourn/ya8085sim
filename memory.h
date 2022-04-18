@@ -1,15 +1,9 @@
 #pragma once
 #include "lenstring.h"
+#include "tokenizer.h"
 #include <stdint.h>
 typedef struct token token;
-typedef struct lenstring lenstring;
 typedef struct hash_table hash_table;
-typedef struct sqdata sqdata;
-
-struct sqdata{
-	lenstring key;
-	int r, c, i;
-};
 
 typedef char *(*loader) (lenstring, token*, int*);
 
@@ -18,8 +12,10 @@ int get_load_pos();
 void set_loadat(uint16_t v);
 uint8_t *get_mem();
 void symbol_queue_init();
-sqdata *symbol_resolve();
+void symbol_queue_end();
+token *symbol_resolve();
 char *load_instruction(lenstring n, token *token_table, int *token_index);
+void reset_load();
 
 char *load_opcode(lenstring n, token *tk, int *ti);
 char *load_mov(lenstring n, token *token_table, int *token_index);

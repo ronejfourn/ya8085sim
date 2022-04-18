@@ -101,8 +101,18 @@ static hash_table *hash_table_new (int size) {
 	return (hash_table *)(tmp + sizeof(int));
 }
 
+static void hash_table_end(hash_table *ht) {
+	int *a = (int *)ht - 1;
+	free(a);
+}
+
 void symbol_table_init() {
 	stable = hash_table_new(8);
+}
+
+void symbol_table_end() {
+	hash_table_end(stable);
+	stable = nullptr;
 }
 
 char *symbol_table_add(lenstring key, int64_t value) {

@@ -10,6 +10,7 @@ void *partial_instruction_table_get(lenstring key);
 void *symbol_table_get(lenstring s);
 int64_t hash(lenstring key);
 void symbol_table_init();
+void symbol_table_end();
 char *symbol_table_add(lenstring key, int64_t value);
 
 struct hash_table{

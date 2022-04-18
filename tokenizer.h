@@ -1,3 +1,4 @@
+#pragma once
 typedef struct lenstring lenstring;
 typedef struct tokenizer tokenizer;
 typedef struct token     token;
@@ -28,6 +29,6 @@ struct token {
 };
 
 struct tokenizer {
-	char *data;
+	const char *data;
 	int row, col;
 };

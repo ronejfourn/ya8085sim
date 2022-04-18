@@ -130,12 +130,15 @@ uint8_t ALU(uint8_t op1, uint8_t op2, char op, uint8_t cc) {
 	return res;
 }
 
-char *read_entire_file(char *fname) {
+struct edit_string {
+	char *data;
+	size_t len;
+};
+
+edit_string read_entire_file(char *fname) {
 	FILE *inf = fopen(fname, "rb");
-	if (!inf) {
-		fprintf(stderr, "could not open file %s\n", fname);
-		return NULL;
-	}
+	edit_string ret = {NULL, 0};
+	if (!inf) return ret;
 
 	fseek(inf, 0, SEEK_END);
 	int fs = ftell(inf);
@@ -143,148 +146,65 @@ char *read_entire_file(char *fname) {
 
 	char *buf = (char *)malloc(fs + 1);
 	if (!buf) {
-		fprintf(stderr, "out of memory\n");
 		fclose(inf);
-		return NULL;
+		return ret;
 	}
 	fread(buf, 1, fs, inf);
 	fclose(inf);
 	buf[fs] = 0;
-	return buf;
+	ret.data = buf;
+	ret.len  = fs;
+	return ret;
 }
 
 int main(int argc, char **argv) {
-	if (argc != 2) {
-		fprintf(stdout, "Usage: ./ya8085sim [filename]\n");
-		return 0;
-	}
+	edit_string buf = {NULL, 0};
+	if (argc >= 2)
+		buf = read_entire_file(argv[1]);
 
-	char *buf = read_entire_file(argv[1]);
-	if (!buf) return 1;
+	char *tksrc = NULL;
+
+	if (!buf.data) {
+		buf.data = (char *)calloc(1, 512);
+		buf.len  = 512;
+	} else {
+		tksrc = (char *)malloc(buf.len);
+		memcpy(tksrc, buf.data, buf.len);
+	}
 
 	instruction_table_init();
 	partial_instruction_table_init();
-	symbol_table_init();
-	symbol_queue_init();
 
 	set_loadat(0x4200);
 
 	// Tokenize
 
-	tokenizer tk;
-	tk.row = 0;
-	tk.col = 0;
-	tk.data = buf;
-
-	int token_count = 0;
-	int instruction_count = 0;
 	int prev = -1;
-	int no_errors = 1;
+	int token_count = 0;
+	int token_index = 0;
+	uint16_t instruction_count = 0;
+	uint16_t instruction_index = 0;
 	char *error_msg = nullptr;
 	int error_row;
-	while (*tk.data) {
-		token t = tokenizer_get_next(&tk);
-		if (t.type == TOKEN_ERR) {
-			error_msg = fmtstr("at [%i:%i] %s \n", t.row, t.col, t.err);
-			error_row = t.row;
-			no_errors = 0;
-		}
-		if (t.type == TOKEN_SYM && t.row != prev) {
-			instruction_count ++;
-			prev = t.row;
-		}
-		token_count ++;
-	}
-
-	tk.row = 0;
-	tk.col = 0;
-	tk.data = buf;
-	int token_index = 0;
-	token *token_table = (token *)malloc(sizeof(token) * token_count);
-	while (*tk.data)
-		token_table[token_index++] = tokenizer_get_next(&tk);
+	token *token_table = nullptr;
+	char pls_tokenize   = 0;
+	char tokenized = 0;
+	char no_errors = 1;
+	char program_should_run = 0;
 
 	struct immap {
 		int mp, ti, bc;
-	} *ins_to_mem_map = (struct immap*)malloc(sizeof(*ins_to_mem_map) * instruction_count);
+	} *ins_to_mem_map = nullptr;
 
-	// Parse tokens
+	uint16_t PC = get_loadat();
+	uint16_t SP = 0xFFFF;
+	uint16_t WZ = 0x0000;
+	uint8_t *SPH = (uint8_t *)&SP;
+	uint8_t *SPL = (uint8_t *)&SP + 1;
 
-	int instruction_index = 0;
-	token_index = 0;
-	while (token_index < token_count && no_errors) {
-		if (token_table[token_index].type == TOKEN_EOI || token_table[token_index].type == TOKEN_CMT) {
-			token_index ++;
-			continue;
-		}
-
-		if (token_table[token_index].type != TOKEN_SYM) {
-			token bad_token = token_table[token_index];
-			char *token_str = token_val_str(bad_token);
-			error_msg = fmtstr("at [%i:%i] expected symbol, got '%s' (%s)\n",
-					bad_token.row, bad_token.col,
-					token_str, token_name(bad_token.type));
-			error_row = bad_token.row;
-			free(token_str);
-			no_errors = 0;
-			break;
-		}
-
-		ins_to_mem_map[instruction_index].ti = token_index;
-		ins_to_mem_map[instruction_index].mp = get_load_pos();
-
-		if (token_table[token_index + 1].type == TOKEN_COL) {
-			token label = token_table[token_index];
-			char *err = symbol_table_add(ls_from_parts(label.sym, label.len), get_load_pos());
-			if (err) {
-				error_row = label.row;
-				error_msg = fmtstr("at [%i:%i] %s\n",
-						label.row, label.col, err);
-				free(err);
-				no_errors = 0;
-				break;
-			}
-			token_index ++;
-			if (token_table[token_index + 1].type != TOKEN_SYM) {
-				token bad_token = token_table[token_index];
-				char *token_str = token_val_str(bad_token);
-				error_row = bad_token.row;
-				error_msg = fmtstr("at [%i:%i] expected instruction, got '%s' (%s)\n",
-						bad_token.row, bad_token.col,
-						token_str, token_name(bad_token.type));
-				free(token_str);
-				no_errors = 0;
-				break;
-			}
-			token_index ++;
-		}
-
-		token instruction = token_table[token_index];
-		char *err = load_instruction(ls_from_parts(instruction.sym, instruction.len), token_table, &token_index);
-		if (err) {
-			error_row = instruction.row;
-			error_msg = fmtstr("at [%i:%i] '%s'\n", instruction.row, instruction.col, err);
-			free(err);
-			no_errors = 0;
-			break;
-		}
-
-		ins_to_mem_map[instruction_index].bc = get_load_pos() - ins_to_mem_map[instruction_index].mp;
-		instruction_index ++;
-	}
-
-	// Resolve forward references
-
-	if (no_errors) {
-		sqdata *badsym = symbol_resolve();
-		if (badsym) {
-			no_errors = 0;
-			error_msg = fmtstr("at [%i:%i] unknown symbol '%.*s'",
-					badsym->r, badsym->c, badsym->key.len, badsym->key.data);
-			error_row = badsym->r;
-		}
-	}
-
+	memory[0x2040] = 5;
+	uint8_t numbers[] = { 9, 3, 2, 4, 1 };
+	memcpy(memory + 0x2041, numbers, sizeof(numbers));
 
     // Setup window
     glfwSetErrorCallback(glfw_error_callback);
@@ -334,17 +254,6 @@ int main(int argc, char **argv) {
     // Our state
     ImVec4 clear_color = ImVec4(0.45f, 0.55f, 0.60f, 1.00f);
 
-	char program_should_run = 1;
-	uint16_t PC = get_loadat();
-	uint16_t SP = 0xFFFF;
-	uint16_t WZ = 0x0000;
-	uint8_t *SPH = (uint8_t *)&SP;
-	uint8_t *SPL = (uint8_t *)&SP + 1;
-
-	memory[0x2040] = 5;
-	uint8_t numbers[] = { 9, 3, 2, 4, 1 };
-	memcpy(memory + 0x2041, numbers, sizeof(numbers));
-
 	static ImGuiTableFlags flags = ImGuiTableFlags_RowBg  | ImGuiTableFlags_Resizable;
 	uint16_t memstart = 0;
 	uint8_t  iostart  = 0;
@@ -371,7 +280,7 @@ int main(int argc, char **argv) {
 			ImGui::TableHeadersRow();
 
 			int iindex = 0;
-			for (int tindex = 0; tindex < token_count; tindex ++) {
+			for (int tindex = 0; tindex < token_count && tokenized; tindex ++) {
 				token t = token_table[tindex];
 				ImGui::TableNextRow();
 
@@ -397,6 +306,7 @@ int main(int argc, char **argv) {
 						case 1: ImGui::Text("%.2X", memory[a.mp]); break;
 						case 2: ImGui::Text("%.2X %.2X", memory[a.mp], memory[a.mp + 1]); break;
 						case 3: ImGui::Text("%.2X %.2X %.2X", memory[a.mp], memory[a.mp + 1], memory[a.mp + 2]); break;
+						default: break;
 					}
 					ImGui::PopStyleColor();
 
@@ -436,8 +346,34 @@ int main(int argc, char **argv) {
 			}
             ImGui::EndTable();
         }
-
 		ImGui::End();
+
+		ImGui::Begin("Code");
+
+		if (ImGui::Button("Assemble"))
+			pls_tokenize = 1;
+		ImGui::SameLine();
+		if (ImGui::Button("Run"))
+			program_should_run = tokenized;
+		struct Funcs {
+			static int MyResizeCallback(ImGuiInputTextCallbackData* data) {
+				if (data->EventFlag == ImGuiInputTextFlags_CallbackResize) {
+					edit_string *my_str = (edit_string *)data->UserData;
+					IM_ASSERT(my_str->data == data->Buf);
+					my_str->data = (char *)realloc(my_str->data, data->BufSize + 30);
+					my_str->len = data->BufSize + 30;
+					data->Buf = my_str->data;
+				}
+				return 0;
+			}
+		};
+
+		ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0.2f, 0.2f, 0.2f, 1.0f));
+		ImGui::InputTextMultiline("##code", buf.data, buf.len, ImGui::GetContentRegionAvail(),
+				ImGuiInputTextFlags_CallbackResize, Funcs::MyResizeCallback, (void*)&buf);
+		ImGui::PopStyleColor();
+		ImGui::End();
+
 		ImGui::Begin("Registers and Flags");
 		{
 			float h = ImGui::GetContentRegionAvail().y * 0.75f;
@@ -668,6 +604,8 @@ int main(int argc, char **argv) {
 		ImGui::End();
 
 		ImGui::Begin("Assembler");
+		if (!buf.data && argc >= 2)
+			ImGui::Text("failed to open file '%s'", argv[1]);
 		if (error_msg)
 			ImGui::Text("%s", error_msg);
 		ImGui::End();
@@ -680,7 +618,154 @@ int main(int argc, char **argv) {
         ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
         glfwSwapBuffers(window);
 
-		if (!program_should_run || !no_errors) continue;
+		if (pls_tokenize) {
+			reset_load();
+			token_count = 0;
+			token_index = 0;
+			instruction_count = 0;
+			instruction_index = 0;
+			if (error_msg) {
+				free(error_msg);
+				error_msg = nullptr;
+			}
+			error_row = -1;
+			prev = -1;
+			no_errors = 1;
+			if (token_table) {
+				free(token_table);
+				token_table = nullptr;
+			}
+
+			if (tksrc) {
+				free(tksrc);
+				tksrc = nullptr;
+			}
+
+			tksrc = (char *)malloc(buf.len + 1);
+
+			if (!tksrc) {
+				error_msg = fmtstr("no source");
+				pls_tokenize = 0;
+				continue;
+			} else {
+				memcpy(tksrc, buf.data, buf.len);
+				tksrc[buf.len] = 0;
+			}
+
+			tokenizer tk;
+			tk.row = 0;
+			tk.col = 0;
+			tk.data = tksrc;
+			while (*tk.data) {
+				token t = tokenizer_get_next(&tk);
+				if (t.type == TOKEN_ERR) {
+					error_msg = fmtstr("at [%i:%i] %s \n", t.row, t.col, t.err);
+					error_row = t.row;
+					no_errors = 0;
+				}
+				if (t.type == TOKEN_SYM && t.row != prev) {
+					instruction_count ++;
+					prev = t.row;
+				}
+				token_count ++;
+			}
+
+			tk.row = 0;
+			tk.col = 0;
+			tk.data = tksrc;
+			token_table = (token *)calloc(1, sizeof(token) * (token_count + 1));
+			while (*tk.data)
+				token_table[token_index++] = tokenizer_get_next(&tk);
+			token_table[token_count].type = TOKEN_EOI;
+
+			tokenized = 1;
+			pls_tokenize = 0;
+
+			if (ins_to_mem_map) free(ins_to_mem_map);
+			ins_to_mem_map = (struct immap*)calloc(1, sizeof(*ins_to_mem_map) * instruction_count);
+
+			// Parse tokens
+			token_index = 0;
+			symbol_table_init();
+			symbol_queue_init();
+			while (token_index < token_count && no_errors) {
+				if (token_table[token_index].type == TOKEN_EOI || token_table[token_index].type == TOKEN_CMT) {
+					token_index ++;
+					continue;
+				}
+
+				if (token_table[token_index].type != TOKEN_SYM) {
+					token bad_token = token_table[token_index];
+					char *token_str = token_val_str(bad_token);
+					error_msg = fmtstr("at [%i:%i] expected symbol, got '%s' (%s)\n",
+							bad_token.row, bad_token.col,
+							token_str, token_name(bad_token.type));
+					error_row = bad_token.row;
+					free(token_str);
+					no_errors = 0;
+					break;
+				}
+
+				ins_to_mem_map[instruction_index].ti = token_index;
+				ins_to_mem_map[instruction_index].mp = get_load_pos();
+
+				if (token_table[token_index + 1].type == TOKEN_COL) {
+					token label = token_table[token_index];
+					char *err = symbol_table_add(ls_from_parts(label.sym, label.len), get_load_pos());
+					if (err) {
+						error_row = label.row;
+						error_msg = fmtstr("at [%i:%i] %s\n",
+								label.row, label.col, err);
+						free(err);
+						no_errors = 0;
+						break;
+					}
+					token_index ++;
+					if (token_table[token_index + 1].type != TOKEN_SYM) {
+						token bad_token = token_table[token_index];
+						char *token_str = token_val_str(bad_token);
+						error_row = bad_token.row;
+						error_msg = fmtstr("at [%i:%i] expected instruction, got '%s' (%s)\n",
+								bad_token.row, bad_token.col,
+								token_str, token_name(bad_token.type));
+						free(token_str);
+						no_errors = 0;
+						break;
+					}
+					token_index ++;
+				}
+
+				token instruction = token_table[token_index];
+				char *err = load_instruction(ls_from_parts(instruction.sym, instruction.len), token_table, &token_index);
+				if (err) {
+					error_row = instruction.row;
+					error_msg = fmtstr("at [%i:%i] '%s'\n", instruction.row, instruction.col, err);
+					free(err);
+					no_errors = 0;
+					break;
+				}
+
+				ins_to_mem_map[instruction_index].bc = get_load_pos() - ins_to_mem_map[instruction_index].mp;
+				instruction_index ++;
+			}
+
+			// Resolve forward references
+
+			if (no_errors) {
+				token *bad = symbol_resolve();
+				if (bad) {
+					no_errors = 0;
+					error_msg = fmtstr("at [%i:%i] unknown symbol '%.*s'",
+							bad->row, bad->col, bad->len, bad->sym);
+					error_row = bad->row;
+				}
+			}
+			symbol_queue_end();
+			symbol_table_end();
+		}
+
+		if (!(program_should_run && no_errors && instruction_count != 0))
+			continue;
 
 		switch (memory[PC]) {
 

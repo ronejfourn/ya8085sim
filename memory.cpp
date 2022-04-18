@@ -11,11 +11,17 @@ uint8_t memory[0x10000];
 static uint16_t loadat;
 static uint16_t offset;
 
+struct sqdata{
+	token t;
+	int i;
+};
+
 struct {
 	int count, cap;
 	sqdata *data;
 } sq;
 
+void reset_load() {offset = 0;}
 int get_loadat() {return loadat;}
 int get_load_pos() {return loadat + offset;}
 void set_loadat(uint16_t v) {loadat = v;}
@@ -26,26 +32,35 @@ void symbol_queue_init() {
 	sq.count = 0;
 }
 
+void symbol_queue_end() {
+	free(sq.data);
+	sq.data = nullptr;
+	sq.cap   = 0;
+	sq.count = 0;
+}
+
 void symbol_queue(token t) {
 	if (sq.count == sq.cap) {
 		sq.cap ++;
 		sq.data = (sqdata *)realloc(sq.data, sq.cap * sizeof(*sq.data));
 	}
-	sq.data[sq.count].key  = (lenstring) {t.sym, (size_t)t.len};
-	sq.data[sq.count].r = t.row;
-	sq.data[sq.count].c = t.col;
+	sq.data[sq.count].t = t;
 	sq.data[sq.count].i = loadat + offset;
 	sq.count ++;
 }
 
-sqdata *symbol_resolve() {
+token *symbol_resolve() {
 	for (int i = 0; i < sq.count; i++) {
-		int64_t p = (int64_t)symbol_table_get(sq.data[i].key);
+		lenstring key = {
+			sq.data[i].t.sym,
+			(size_t)sq.data[i].t.len
+		};
+		int64_t p = (int64_t)symbol_table_get(key);
 		if (p != -1) {
 			memory[sq.data[i].i    ] = (p >> 0) & 0xFF;
 			memory[sq.data[i].i + 1] = (p >> 8) & 0xFF;
 		} else {
-			return &sq.data[i];
+			return &sq.data[i].t;
 		}
 	}
 	return NULL;

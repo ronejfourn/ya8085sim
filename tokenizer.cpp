@@ -6,6 +6,13 @@
 token tokenizer_get_next(tokenizer *tk){
 	token tok;
 
+	if (!*tk->data) {
+		tok.type = TOKEN_EOI;
+		tok.row = tk->row;
+		tok.col = tk->col;
+		return tok;
+	}
+
 	while (*tk->data && IS_SPACE(*tk->data)) {
 		tk->data ++;
 		tk->col ++;
@@ -118,7 +125,7 @@ token tokenizer_get_next(tokenizer *tk){
 token tokenizer_peek_next(tokenizer *tk){
 	int r    = tk->row;
 	int c    = tk->col;
-	char *d  = tk->data;
+	const char *d  = tk->data;
 	token t  = tokenizer_get_next(tk);
 	tk->row  = r;
 	tk->col  = c;
@@ -142,7 +149,7 @@ lenstring tokenizer_get_line(tokenizer *tk){
 lenstring tokenizer_peek_line(tokenizer *tk){
 	int r    = tk->row;
 	int c    = tk->col;
-	char *d  = tk->data;
+	const char *d  = tk->data;
 	lenstring t = tokenizer_get_line(tk);
 	tk->row  = r;
 	tk->col  = c;
