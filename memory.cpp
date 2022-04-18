@@ -9,7 +9,7 @@
 
 uint8_t memory[0x10000];
 static uint16_t loadat;
-static uint16_t offset;
+static uint16_t loadcpy;
 
 struct sqdata{
 	token t;
@@ -21,10 +21,13 @@ struct {
 	sqdata *data;
 } sq;
 
-void reset_load() {offset = 0;}
-int get_loadat() {return loadat;}
-int get_load_pos() {return loadat + offset;}
-void set_loadat(uint16_t v) {loadat = v;}
+void reset_load() {loadcpy = loadat;}
+uint16_t get_loadat() {return loadat;}
+uint16_t get_load_pos() {return loadcpy;}
+void set_loadat(uint16_t v) {
+	loadat = v;
+	loadcpy = v;
+}
 
 void symbol_queue_init() {
 	sq.data  = (sqdata *)malloc(sizeof(*sq.data) * 8);
@@ -45,7 +48,7 @@ void symbol_queue(token t) {
 		sq.data = (sqdata *)realloc(sq.data, sq.cap * sizeof(*sq.data));
 	}
 	sq.data[sq.count].t = t;
-	sq.data[sq.count].i = loadat + offset;
+	sq.data[sq.count].i = loadcpy;
 	sq.count ++;
 }
 
@@ -78,7 +81,7 @@ char *load_opcode(lenstring n, token *tk, int *ti) {
 	int64_t i = (int64_t)instruction_table_get(n);
 
 	if (i != -1)
-		memory[loadat + offset++] = i & 0xFF;
+		memory[loadcpy++] = i & 0xFF;
 	else
 		return fmtstr("unknown instruction, got %.*s", n.len, n.data);
 
@@ -189,7 +192,7 @@ char *load_mvi(lenstring n, token *tk, int *ti) {
 	char *msg = load_opcode(ls_from_cstr(k), tk, ti);
 	if (msg) return msg;
 
-	memory[loadat + offset++] = a.num & 0xFF;
+	memory[loadcpy++] = a.num & 0xFF;
 
 	return NULL;
 }
@@ -238,12 +241,12 @@ char *load_lxi(lenstring n, token *tk, int *ti) {
 
 		int64_t p = (int64_t)symbol_table_get((lenstring) {a.sym, (size_t)a.len});
 		if (p != -1) {
-			memory[loadat + offset++] = (p >> 0) & 0xFF;
-			memory[loadat + offset++] = (p >> 8) & 0xFF;
+			memory[loadcpy++] = (p >> 0) & 0xFF;
+			memory[loadcpy++] = (p >> 8) & 0xFF;
 		} else {
 			symbol_queue(a);
-			offset++;
-			offset++;
+			loadcpy++;
+			loadcpy++;
 		}
 	} else if (a.type == TOKEN_NUM) {
 		tk[*ti].type = TOKEN_DWD;
@@ -253,8 +256,8 @@ char *load_lxi(lenstring n, token *tk, int *ti) {
 		if (a.num  > 0xFFFF)
 			return fmtstr("expected 16-bit number (0000h - 0ffffh), got %0xh", a.num);
 
-		memory[loadat + offset++] = (a.num >> 0) & 0xFF;
-		memory[loadat + offset++] = (a.num >> 8) & 0xFF;
+		memory[loadcpy++] = (a.num >> 0) & 0xFF;
+		memory[loadcpy++] = (a.num >> 8) & 0xFF;
 	} else {
 		char *v = token_val_str(a);
 		char *m = fmtstr("expected 16-bit number (0000h - 0ffffh) or label, got (%s) %s", token_name(a.type), v);
@@ -421,7 +424,7 @@ char *load_imm_w(lenstring n, token *tk, int *ti) {
 	char *msg = load_opcode(ls_from_cstr(k), tk, ti);
 	if (msg) return msg;
 
-	memory[loadat + offset++] = a.num & 0xFF;
+	memory[loadcpy++] = a.num & 0xFF;
 
 	return NULL;
 }
@@ -448,12 +451,12 @@ char *load_imm_dw(lenstring n, token *tk, int *ti) {
 
 		int64_t p = (int64_t)symbol_table_get((lenstring) {a.sym, (size_t)a.len});
 		if (p != -1) {
-			memory[loadat + offset++] = (p >> 0) & 0xFF;
-			memory[loadat + offset++] = (p >> 8) & 0xFF;
+			memory[loadcpy++] = (p >> 0) & 0xFF;
+			memory[loadcpy++] = (p >> 8) & 0xFF;
 		} else {
 			symbol_queue(a);
-			offset++;
-			offset++;
+			loadcpy++;
+			loadcpy++;
 		}
 	} else if (a.type == TOKEN_NUM) {
 		tk[*ti].type = TOKEN_DWD;
@@ -463,8 +466,8 @@ char *load_imm_dw(lenstring n, token *tk, int *ti) {
 		if (a.num  > 0xFFFF)
 			return fmtstr("expected 16-bit number (0000h - 0ffffh), got %0xh", a.num);
 
-		memory[loadat + offset++] = (a.num >> 0) & 0xFF;
-		memory[loadat + offset++] = (a.num >> 8) & 0xFF;
+		memory[loadcpy++] = (a.num >> 0) & 0xFF;
+		memory[loadcpy++] = (a.num >> 8) & 0xFF;
 	} else {
 		char *v = token_val_str(a);
 		char *m = fmtstr("expected 16-bit number (0000h - 0ffffh) or label, got (%s) %s", token_name(a.type), v);

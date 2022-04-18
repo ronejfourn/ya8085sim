@@ -175,8 +175,6 @@ int main(int argc, char **argv) {
 	instruction_table_init();
 	partial_instruction_table_init();
 
-	set_loadat(0x4200);
-
 	// Tokenize
 
 	int prev = -1;
@@ -184,6 +182,7 @@ int main(int argc, char **argv) {
 	int token_index = 0;
 	uint16_t instruction_count = 0;
 	uint16_t instruction_index = 0;
+	uint16_t loadat = 0x4200;
 	char *error_msg = nullptr;
 	int error_row;
 	token *token_table = nullptr;
@@ -193,7 +192,8 @@ int main(int argc, char **argv) {
 	char program_should_run = 0;
 
 	struct immap {
-		int mp, ti, bc;
+		uint16_t mp;
+		int ti, bc;
 	} *ins_to_mem_map = nullptr;
 
 	uint16_t PC = get_loadat();
@@ -303,9 +303,9 @@ int main(int argc, char **argv) {
 					ImGui::TableSetColumnIndex(1);
 					ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(HEX2NORM(0x938AA9), 1.0f));
 					switch (a.bc) {
-						case 1: ImGui::Text("%.2X", memory[a.mp]); break;
-						case 2: ImGui::Text("%.2X %.2X", memory[a.mp], memory[a.mp + 1]); break;
-						case 3: ImGui::Text("%.2X %.2X %.2X", memory[a.mp], memory[a.mp + 1], memory[a.mp + 2]); break;
+						case 1: ImGui::Text("%.2X", memory[uint16_t(a.mp)]); break;
+						case 2: ImGui::Text("%.2X %.2X", memory[uint16_t(a.mp)], memory[uint16_t(a.mp + 1)]); break;
+						case 3: ImGui::Text("%.2X %.2X %.2X", memory[uint16_t(a.mp)], memory[uint16_t(a.mp + 1)], memory[uint16_t(a.mp + 2)]); break;
 						default: break;
 					}
 					ImGui::PopStyleColor();
@@ -349,12 +349,25 @@ int main(int argc, char **argv) {
 		ImGui::End();
 
 		ImGui::Begin("Code");
+		ImGui::PushItemWidth(100);
+		ImGui::Text("Load at (Hex)"); ImGui::SameLine();
+		ImGui::InputScalar("##loadathex", ImGuiDataType_U16, &loadat, NULL, NULL, "%x"); ImGui::SameLine();
+		ImGui::Text("Load at (Dec)"); ImGui::SameLine();
+		ImGui::InputScalar("##loadatdec", ImGuiDataType_U16, &loadat, NULL, NULL, "%d"); ImGui::SameLine();
+		ImGui::PopItemWidth();
 
-		if (ImGui::Button("Assemble"))
+		ImGui::PushItemWidth(-100);
+		if (ImGui::Button("Assemble")) {
+			set_loadat(loadat);
 			pls_tokenize = 1;
+			PC = get_loadat();
+		}
 		ImGui::SameLine();
-		if (ImGui::Button("Run"))
+		if (ImGui::Button("Run")) {
 			program_should_run = tokenized;
+			PC = get_loadat();
+		}
+		ImGui::PopItemWidth();
 		struct Funcs {
 			static int MyResizeCallback(ImGuiInputTextCallbackData* data) {
 				if (data->EventFlag == ImGuiInputTextFlags_CallbackResize) {
@@ -745,7 +758,9 @@ int main(int argc, char **argv) {
 					break;
 				}
 
-				ins_to_mem_map[instruction_index].bc = get_load_pos() - ins_to_mem_map[instruction_index].mp;
+				uint16_t mp = ins_to_mem_map[instruction_index].mp;
+				uint16_t cp = get_load_pos();
+				ins_to_mem_map[instruction_index].bc = mp > cp ? (1 << 16 | cp) - mp : cp - mp;
 				instruction_index ++;
 			}
 
