@@ -44,10 +44,10 @@ token tokenizer_get_next(tokenizer *tk){
 
 			if (*tk->data >= 'A' && *tk->data <= 'F') {
 				is_decimal = 0;
-				hex = hex << 4 | (*tk->data - 'A');
+				hex = hex << 4 | (*tk->data - 'A' + 10);
 			} else if (*tk->data >= 'a' && *tk->data <= 'f') {
 				is_decimal = 0;
-				hex = hex << 4 | (*tk->data - 'a');
+				hex = hex << 4 | (*tk->data - 'a' + 10);
 			} else if (IS_NUM(*tk->data)) {
 				hex = hex << 4 | (*tk->data - '0');
 				tok.num = tok.num * 10 + *tk->data - '0';

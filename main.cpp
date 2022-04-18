@@ -80,16 +80,11 @@ static void glfw_framebuffer_size_callback(GLFWwindow *window, int w, int h) {
 uint8_t ALU(uint8_t op1, uint8_t op2, char op, uint8_t cc) {
 	uint8_t res;
 	switch (op) {
-		case '-':
-			op2 = ~op2 + 1;
-		case '+':
-			res = op1 + op2; break;
-		case '&':
-			res = op1 & op2; break;
-		case '|':
-			res = op1 | op2; break;
-		case '^':
-			res = op1 ^ op2; break;
+		case '-': op2 = ~op2 + 1;
+		case '+': res = op1 + op2; break;
+		case '&': res = op1 & op2; break;
+		case '|': res = op1 | op2; break;
+		case '^': res = op1 ^ op2; break;
 	}
 
 	res == 0 ?
@@ -102,7 +97,7 @@ uint8_t ALU(uint8_t op1, uint8_t op2, char op, uint8_t cc) {
 
 	if (cc) {
 		if (op == '-')
-			(op1 + op2 > 0xff) ?
+			(op1 + op2 > 0xff || op2 == 0) ?
 				RESET(REGISTER(F), FLAG_CY):
 				SET(REGISTER(F), FLAG_CY);
 		else if (op == '+')
@@ -186,10 +181,11 @@ int main(int argc, char **argv) {
 	char *error_msg = nullptr;
 	int error_row;
 	token *token_table = nullptr;
-	char pls_tokenize   = 0;
-	char tokenized = 0;
-	char no_errors = 1;
-	char program_should_run = 0;
+	bool pls_tokenize  = false;
+	bool tokenized = false;
+	bool no_errors = true;
+	bool program_should_run = false;
+	bool single_step = false;
 
 	struct immap {
 		uint16_t mp;
@@ -221,7 +217,7 @@ int main(int argc, char **argv) {
 #endif
 
     // Create window with graphics context
-    GLFWwindow* window = glfwCreateWindow(1280, 720, "Dear ImGui GLFW+OpenGL3 example", NULL, NULL);
+    GLFWwindow* window = glfwCreateWindow(1280, 720, "Yet Another 8085 Simulator", NULL, NULL);
     if (window == NULL)
         return 1;
     glfwMakeContextCurrent(window);
@@ -258,6 +254,7 @@ int main(int argc, char **argv) {
 	uint16_t memstart = 0;
 	uint8_t  iostart  = 0;
 	uint16_t stkstart = SP;
+	static int selected = -1;
 
     while (!glfwWindowShouldClose(window)) {
         glfwPollEvents();
@@ -359,7 +356,7 @@ int main(int argc, char **argv) {
 		ImGui::PushItemWidth(-100);
 		if (ImGui::Button("Assemble")) {
 			set_loadat(loadat);
-			pls_tokenize = 1;
+			pls_tokenize = true;
 			PC = get_loadat();
 		}
 		ImGui::SameLine();
@@ -367,6 +364,15 @@ int main(int argc, char **argv) {
 			program_should_run = tokenized;
 			PC = get_loadat();
 		}
+		ImGui::SameLine();
+		if (ImGui::Button("Stop")) {
+			program_should_run = 0;
+			PC = get_loadat();
+		}
+		ImGui::Checkbox("Single Step", &single_step);
+		ImGui::SameLine();
+		if (ImGui::Button("Step"))
+			program_should_run = tokenized && single_step;
 		ImGui::PopItemWidth();
 		struct Funcs {
 			static int MyResizeCallback(ImGuiInputTextCallbackData* data) {
@@ -392,7 +398,9 @@ int main(int argc, char **argv) {
 			float h = ImGui::GetContentRegionAvail().y * 0.75f;
             ImGuiWindowFlags window_flags = ImGuiWindowFlags_None;
             ImGui::BeginChild("##rfL", ImVec2(ImGui::GetContentRegionAvail().x * 0.4f, h), true, window_flags);
-			ImGui::Text("Flags");
+			ImGui::Text("Flags"); ImGui::SameLine();
+			if (ImGui::Button("Reset"))
+				REGISTER(F) = 0;
 			if (ImGui::BeginTable("Flags", 2)) {
 				ImGui::TableSetupColumn("Name");
 				ImGui::TableSetupColumn("Value");
@@ -427,7 +435,9 @@ int main(int argc, char **argv) {
             ImGui::EndChild();
 			ImGui::SameLine();
             ImGui::BeginChild("##rfR", ImVec2(0, h), true, window_flags);
-			ImGui::Text("Registers");
+			ImGui::Text("Registers"); ImGui::SameLine();
+			if (ImGui::Button("Reset"))
+				memset(registers, 0, REG_COUNT);
 			if (ImGui::BeginTable("Registers", 2)) {
 				ImGui::TableSetupColumn("Name");
 				ImGui::TableSetupColumn("Value");
@@ -509,8 +519,6 @@ int main(int argc, char **argv) {
 			ImGui::SameLine();
 			ImGui::InputScalar("##stkdec", ImGuiDataType_U16, &stkstart, NULL, NULL, "%u");
 
-			stkstart = (stkstart > SP) ? SP : stkstart;
-
             ImGui::EndChild();
             ImGui::BeginChild("##stackB", ImVec2(0, 0), true, window_flags);
 
@@ -541,7 +549,7 @@ int main(int argc, char **argv) {
 		ImGui::Begin("IO Ports");
 		{
             ImGuiWindowFlags window_flags = ImGuiWindowFlags_None;
-            ImGui::BeginChild("##ioT", ImVec2(0, 68), true, window_flags);
+            ImGui::BeginChild("##ioT", ImVec2(0, 96), true, window_flags);
 
 			ImGui::Text("Start (Hex)");
 			ImGui::SameLine();
@@ -549,10 +557,13 @@ int main(int argc, char **argv) {
 			ImGui::Text("Start (Dec)");
 			ImGui::SameLine();
 			ImGui::InputScalar("##iodec", ImGuiDataType_U8, &iostart, NULL, NULL, "%u");
+			if (ImGui::Button("Reset"))
+				memset(IO, 0, 0x100);
 
             ImGui::EndChild();
             ImGui::BeginChild("##ioB", ImVec2(0, 0), true, window_flags);
 
+			char buf[32];
 			if (ImGui::BeginTable("##io", 4, flags)) {
 				ImGui::TableSetupColumn("Address (Hex)");
 				ImGui::TableSetupColumn("Address (Dec)");
@@ -567,9 +578,29 @@ int main(int argc, char **argv) {
 					ImGui::TableSetColumnIndex(1);
 					ImGui::Text("%d"  , row);
 					ImGui::TableSetColumnIndex(2);
-					ImGui::Text("%.2XH", IO[row]);
+					if (selected == row) {
+						if (ImGui::InputScalar("##ioinpH", ImGuiDataType_U8, &IO[selected], NULL, NULL, "%.2X",
+								ImGuiInputTextFlags_AlwaysOverwrite | ImGuiInputTextFlags_EnterReturnsTrue))
+							selected = -1;
+					} else {
+						sprintf(buf, "##iorowh%d", row);
+						if (ImGui::Selectable(buf, selected == row))
+							selected = row;
+						ImGui::SameLine();
+						ImGui::Text("%.2XH", IO[row]);
+					}
 					ImGui::TableSetColumnIndex(3);
-					ImGui::Text("%d", IO[row]);
+					if (selected == row) {
+						if (ImGui::InputScalar("##ioinpD", ImGuiDataType_U8, &IO[selected], NULL, NULL, "%d",
+								ImGuiInputTextFlags_AlwaysOverwrite | ImGuiInputTextFlags_EnterReturnsTrue))
+							selected = -1;
+					} else {
+						sprintf(buf, "##iorowd%d", row);
+						if (ImGui::Selectable(buf, selected == row))
+							selected = row;
+						ImGui::SameLine();
+						ImGui::Text("%d", IO[row]);
+					}
 				}
 				ImGui::EndTable();
 			}
@@ -580,7 +611,7 @@ int main(int argc, char **argv) {
 		ImGui::Begin("Memory");
 		{
             ImGuiWindowFlags window_flags = ImGuiWindowFlags_None;
-            ImGui::BeginChild("##memoryT", ImVec2(0, 68), true, window_flags);
+            ImGui::BeginChild("##memoryT", ImVec2(0, 96), true, window_flags);
 
 			ImGui::Text("Start (Hex)");
 			ImGui::SameLine();
@@ -588,17 +619,23 @@ int main(int argc, char **argv) {
 			ImGui::Text("Start (Dec)");
 			ImGui::SameLine();
 			ImGui::InputScalar("##memdec", ImGuiDataType_U16, &memstart, NULL, NULL, "%u");
+			if (ImGui::Button("Reset")) {
+				tokenized = false;
+				memset(memory, 0, 0x10000);
+			}
 
             ImGui::EndChild();
             ImGui::BeginChild("##memoryB", ImVec2(0, 0), true, window_flags);
 
 			int memend = memstart + 0x100 < 0x10000 ? memstart + 0x100 : 0x10000;
+			char buf[32];
 			if (ImGui::BeginTable("##memory", 4, flags)) {
 				ImGui::TableSetupColumn("Address (Hex)");
 				ImGui::TableSetupColumn("Address (Dec)");
 				ImGui::TableSetupColumn("Data (Hex)");
 				ImGui::TableSetupColumn("Data (Dec)");
 				ImGui::TableHeadersRow();
+				static int selected = -1;
 				for (int row = memstart; row < memend; row++) {
 					ImGui::TableNextRow();
 					ImGui::TableSetColumnIndex(0);
@@ -606,9 +643,29 @@ int main(int argc, char **argv) {
 					ImGui::TableSetColumnIndex(1);
 					ImGui::Text("%d", row);
 					ImGui::TableSetColumnIndex(2);
-					ImGui::Text("%.2XH", memory[row]);
+					if (selected == row) {
+						if (ImGui::InputScalar("##meminpH", ImGuiDataType_U8, &memory[selected], NULL, NULL, "%.2X",
+								ImGuiInputTextFlags_AlwaysOverwrite | ImGuiInputTextFlags_EnterReturnsTrue))
+							selected = -1;
+					} else {
+						sprintf(buf, "##memrowh%d", row);
+						if (ImGui::Selectable(buf, selected == row))
+							selected = row;
+						ImGui::SameLine();
+						ImGui::Text("%.2XH", memory[row]);
+					}
 					ImGui::TableSetColumnIndex(3);
-					ImGui::Text("%d", memory[row]);
+					if (selected == row){
+						if (ImGui::InputScalar("##meminpD", ImGuiDataType_U8, &memory[selected], NULL, NULL, "%d",
+								ImGuiInputTextFlags_AlwaysOverwrite | ImGuiInputTextFlags_EnterReturnsTrue))
+							selected = -1;
+					} else {
+						sprintf(buf, "##memrowd%d", row);
+						if (ImGui::Selectable(buf, selected == row))
+							selected = row;
+						ImGui::SameLine();
+						ImGui::Text("%d", memory[row]);
+					}
 				}
 				ImGui::EndTable();
 			}
@@ -643,7 +700,7 @@ int main(int argc, char **argv) {
 			}
 			error_row = -1;
 			prev = -1;
-			no_errors = 1;
+			no_errors = true;
 			if (token_table) {
 				free(token_table);
 				token_table = nullptr;
@@ -658,11 +715,11 @@ int main(int argc, char **argv) {
 
 			if (!tksrc) {
 				error_msg = fmtstr("no source");
-				pls_tokenize = 0;
+				pls_tokenize = false;
 				continue;
 			} else {
 				memcpy(tksrc, buf.data, buf.len);
-				tksrc[buf.len] = 0;
+				tksrc[buf.len] = false;
 			}
 
 			tokenizer tk;
@@ -674,7 +731,7 @@ int main(int argc, char **argv) {
 				if (t.type == TOKEN_ERR) {
 					error_msg = fmtstr("at [%i:%i] %s \n", t.row, t.col, t.err);
 					error_row = t.row;
-					no_errors = 0;
+					no_errors = false;
 				}
 				if (t.type == TOKEN_SYM && t.row != prev) {
 					instruction_count ++;
@@ -691,8 +748,8 @@ int main(int argc, char **argv) {
 				token_table[token_index++] = tokenizer_get_next(&tk);
 			token_table[token_count].type = TOKEN_EOI;
 
-			tokenized = 1;
-			pls_tokenize = 0;
+			tokenized = true;
+			pls_tokenize = false;
 
 			if (ins_to_mem_map) free(ins_to_mem_map);
 			ins_to_mem_map = (struct immap*)calloc(1, sizeof(*ins_to_mem_map) * instruction_count);
@@ -715,7 +772,7 @@ int main(int argc, char **argv) {
 							token_str, token_name(bad_token.type));
 					error_row = bad_token.row;
 					free(token_str);
-					no_errors = 0;
+					no_errors = false;
 					break;
 				}
 
@@ -730,7 +787,7 @@ int main(int argc, char **argv) {
 						error_msg = fmtstr("at [%i:%i] %s\n",
 								label.row, label.col, err);
 						free(err);
-						no_errors = 0;
+						no_errors = false;
 						break;
 					}
 					token_index ++;
@@ -742,7 +799,7 @@ int main(int argc, char **argv) {
 								bad_token.row, bad_token.col,
 								token_str, token_name(bad_token.type));
 						free(token_str);
-						no_errors = 0;
+						no_errors = false;
 						break;
 					}
 					token_index ++;
@@ -754,7 +811,7 @@ int main(int argc, char **argv) {
 					error_row = instruction.row;
 					error_msg = fmtstr("at [%i:%i] '%s'\n", instruction.row, instruction.col, err);
 					free(err);
-					no_errors = 0;
+					no_errors = false;
 					break;
 				}
 
@@ -769,7 +826,7 @@ int main(int argc, char **argv) {
 			if (no_errors) {
 				token *bad = symbol_resolve();
 				if (bad) {
-					no_errors = 0;
+					no_errors = false;
 					error_msg = fmtstr("at [%i:%i] unknown symbol '%.*s'",
 							bad->row, bad->col, bad->len, bad->sym);
 					error_row = bad->row;
@@ -1346,7 +1403,7 @@ int main(int argc, char **argv) {
 		case RST_6:
 		case RST_7:
 		case HLT:
-			program_should_run = 0;
+			program_should_run = false;
 			++PC;
 			break;
 
@@ -1367,8 +1424,11 @@ int main(int argc, char **argv) {
 			if (error_msg)
 				free(error_msg);
 			error_msg = fmtstr("[FATAL] unexpected opcode %0x\n", memory[PC]);
-			program_should_run = 0;
+			program_should_run = false;
 			break;
+		}
+		if (single_step) {
+			program_should_run = false;
 		}
     }
 
