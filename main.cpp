@@ -70,7 +70,7 @@ extern uint8_t memory[0x10000];
 #define TOGGLE(f, b) ((f) ^= (b))
 
 static void glfw_error_callback(int error, const char* description) {
-    fprintf(stderr, "Glfw Error %d: %s\n", error, description);
+	fprintf(stderr, "Glfw Error %d: %s\n", error, description);
 }
 
 static void glfw_framebuffer_size_callback(GLFWwindow *window, int w, int h) {
@@ -113,14 +113,9 @@ uint8_t ALU(uint8_t op1, uint8_t op2, char op, uint8_t cc) {
 		RESET(REGISTER(F), FLAG_P):
 		SET(REGISTER(F), FLAG_P);
 
-	if (op == '-')
-		((op1 & 0xf) + (op2 & 0xf) > 0xf) ?
-			SET(REGISTER(F), FLAG_AC):
-			RESET(REGISTER(F), FLAG_AC);
-	else if (op == '+')
-		((op1 & 0xf) + (op2 & 0xf) > 0xf) ?
-			RESET(REGISTER(F), FLAG_AC):
-			SET(REGISTER(F), FLAG_AC);
+	((op1 & 0xf) + (op2 & 0xf) > 0xf) ?
+		SET(REGISTER(F), FLAG_AC):
+		RESET(REGISTER(F), FLAG_AC);
 
 	return res;
 }
@@ -202,53 +197,53 @@ int main(int argc, char **argv) {
 	uint8_t numbers[] = { 9, 3, 2, 4, 1 };
 	memcpy(memory + 0x2041, numbers, sizeof(numbers));
 
-    // Setup window
-    glfwSetErrorCallback(glfw_error_callback);
-    if (!glfwInit())
-        return 1;
+	// Setup window
+	glfwSetErrorCallback(glfw_error_callback);
+	if (!glfwInit())
+	    return 1;
 
-    // GL 3.0 + GLSL 130
-    const char* glsl_version = "#version 130";
-    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
-    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
-    glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+	// GL 3.0 + GLSL 130
+	const char* glsl_version = "#version 130";
+	glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
+	glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
+	glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 #if defined(__APPLE__)
 	glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);
 #endif
 
-    // Create window with graphics context
-    GLFWwindow* window = glfwCreateWindow(1280, 720, "Yet Another 8085 Simulator", NULL, NULL);
-    if (window == NULL)
-        return 1;
-    glfwMakeContextCurrent(window);
+	// Create window with graphics context
+	GLFWwindow* window = glfwCreateWindow(1280, 720, "Yet Another 8085 Simulator", NULL, NULL);
+	if (window == NULL)
+	    return 1;
+	glfwMakeContextCurrent(window);
 	glfwSetFramebufferSizeCallback(window, glfw_framebuffer_size_callback);
-    glfwSwapInterval(1); // Enable vsync
+	glfwSwapInterval(1); // Enable vsync
 
-    // Setup Dear ImGui context
-    IMGUI_CHECKVERSION();
-    ImGui::CreateContext();
-    ImGuiIO& io = ImGui::GetIO(); (void)io;
-    io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;       // Enable Keyboard Controls
-    io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;           // Enable Docking
+	// Setup Dear ImGui context
+	IMGUI_CHECKVERSION();
+	ImGui::CreateContext();
+	ImGuiIO& io = ImGui::GetIO(); (void)io;
+	io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;       // Enable Keyboard Controls
+	io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;           // Enable Docking
 
-    // Setup Dear ImGui style
-    ImGui::StyleColorsDark();
+	// Setup Dear ImGui style
+	ImGui::StyleColorsDark();
 
-    // When viewports are enabled we tweak WindowRounding/WindowBg so platform windows can look identical to regular ones.
-    ImGuiStyle& style = ImGui::GetStyle();
-    if (io.ConfigFlags & ImGuiConfigFlags_ViewportsEnable) {
-        style.WindowRounding = 0.0f;
-        style.Colors[ImGuiCol_WindowBg].w = 1.0f;
-    }
+	// When viewports are enabled we tweak WindowRounding/WindowBg so platform windows can look identical to regular ones.
+	ImGuiStyle& style = ImGui::GetStyle();
+	if (io.ConfigFlags & ImGuiConfigFlags_ViewportsEnable) {
+	    style.WindowRounding = 0.0f;
+	    style.Colors[ImGuiCol_WindowBg].w = 1.0f;
+	}
 
-    io.Fonts->AddFontFromMemoryCompressedTTF(base85_compressed_data, base85_compressed_size, 18.0f);
+	io.Fonts->AddFontFromMemoryCompressedTTF(base85_compressed_data, base85_compressed_size, 18.0f);
 
-    // Setup Platform/Renderer backends
-    ImGui_ImplGlfw_InitForOpenGL(window, true);
-    ImGui_ImplOpenGL3_Init(glsl_version);
+	// Setup Platform/Renderer backends
+	ImGui_ImplGlfw_InitForOpenGL(window, true);
+	ImGui_ImplOpenGL3_Init(glsl_version);
 
-    // Our state
-    ImVec4 clear_color = ImVec4(0.45f, 0.55f, 0.60f, 1.00f);
+	// Our state
+	ImVec4 clear_color = ImVec4(0.45f, 0.55f, 0.60f, 1.00f);
 
 	static ImGuiTableFlags flags = ImGuiTableFlags_RowBg  | ImGuiTableFlags_Resizable;
 	uint16_t memstart = 0;
@@ -256,13 +251,13 @@ int main(int argc, char **argv) {
 	uint16_t stkstart = SP;
 	static int selected = -1;
 
-    while (!glfwWindowShouldClose(window)) {
-        glfwPollEvents();
+	while (!glfwWindowShouldClose(window)) {
+	    glfwPollEvents();
 
-        // Start the Dear ImGui frame
-        ImGui_ImplOpenGL3_NewFrame();
-        ImGui_ImplGlfw_NewFrame();
-        ImGui::NewFrame();
+	    // Start the Dear ImGui frame
+	    ImGui_ImplOpenGL3_NewFrame();
+	    ImGui_ImplGlfw_NewFrame();
+	    ImGui::NewFrame();
 
 		ImGui::DockSpaceOverViewport(ImGui::GetMainViewport());
 
@@ -270,7 +265,7 @@ int main(int argc, char **argv) {
 		ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 5.0f);
 
 		ImGui::Begin("Listing");
-        if (ImGui::BeginTable("##memory", 3, flags)) {
+	    if (ImGui::BeginTable("##memory", 3, flags)) {
 			ImGui::TableSetupColumn("Address (Hex)");
 			ImGui::TableSetupColumn("Opcode");
 			ImGui::TableSetupColumn("Assembly");
@@ -341,8 +336,8 @@ int main(int argc, char **argv) {
 					ImGui::TextColored(ImVec4(HEX2NORM(0x727169), 1.0f), ";%.*s", t.len, t.cmt);
 				}
 			}
-            ImGui::EndTable();
-        }
+	        ImGui::EndTable();
+	    }
 		ImGui::End();
 
 		ImGui::Begin("Code");
@@ -396,8 +391,8 @@ int main(int argc, char **argv) {
 		ImGui::Begin("Registers and Flags");
 		{
 			float h = ImGui::GetContentRegionAvail().y * 0.75f;
-            ImGuiWindowFlags window_flags = ImGuiWindowFlags_None;
-            ImGui::BeginChild("##rfL", ImVec2(ImGui::GetContentRegionAvail().x * 0.4f, h), true, window_flags);
+	        ImGuiWindowFlags window_flags = ImGuiWindowFlags_None;
+	        ImGui::BeginChild("##rfL", ImVec2(ImGui::GetContentRegionAvail().x * 0.4f, h), true, window_flags);
 			ImGui::Text("Flags"); ImGui::SameLine();
 			if (ImGui::Button("Reset"))
 				REGISTER(F) = 0;
@@ -432,9 +427,9 @@ int main(int argc, char **argv) {
 				ImGui::Text("%d", (REGISTER(F) & FLAG_CY) != 0);
 				ImGui::EndTable();
 			}
-            ImGui::EndChild();
+	        ImGui::EndChild();
 			ImGui::SameLine();
-            ImGui::BeginChild("##rfR", ImVec2(0, h), true, window_flags);
+	        ImGui::BeginChild("##rfR", ImVec2(0, h), true, window_flags);
 			ImGui::Text("Registers"); ImGui::SameLine();
 			if (ImGui::Button("Reset"))
 				memset(registers, 0, REG_COUNT);
@@ -484,8 +479,8 @@ int main(int argc, char **argv) {
 					ImGui::Text("%.2X", REGISTER(L));
 				ImGui::EndTable();
 			}
-            ImGui::EndChild();
-            ImGui::BeginChild("##rfB", ImVec2(0, 0), true, window_flags);
+	        ImGui::EndChild();
+	        ImGui::BeginChild("##rfB", ImVec2(0, 0), true, window_flags);
 			if (ImGui::BeginTable("Registers", 2)) {
 				ImGui::TableSetupColumn("Name");
 				ImGui::TableSetupColumn("Value");
@@ -504,13 +499,13 @@ int main(int argc, char **argv) {
 				ImGui::EndTable();
 			}
 			ImGui::EndChild();
-        }
+	    }
 		ImGui::End();
 
 		ImGui::Begin("Stack");
 		{
-            ImGuiWindowFlags window_flags = ImGuiWindowFlags_None;
-            ImGui::BeginChild("##stackT", ImVec2(0, 68), true, window_flags);
+	        ImGuiWindowFlags window_flags = ImGuiWindowFlags_None;
+	        ImGui::BeginChild("##stackT", ImVec2(0, 68), true, window_flags);
 
 			ImGui::Text("Start (Hex)");
 			ImGui::SameLine();
@@ -519,8 +514,8 @@ int main(int argc, char **argv) {
 			ImGui::SameLine();
 			ImGui::InputScalar("##stkdec", ImGuiDataType_U16, &stkstart, NULL, NULL, "%u");
 
-            ImGui::EndChild();
-            ImGui::BeginChild("##stackB", ImVec2(0, 0), true, window_flags);
+	        ImGui::EndChild();
+	        ImGui::BeginChild("##stackB", ImVec2(0, 0), true, window_flags);
 
 			if (ImGui::BeginTable("##stack", 4, flags)) {
 				ImGui::TableSetupColumn("Address (Hex)");
@@ -542,14 +537,14 @@ int main(int argc, char **argv) {
 				}
 				ImGui::EndTable();
 			}
-            ImGui::EndChild();
+	        ImGui::EndChild();
 		}
 		ImGui::End();
 
 		ImGui::Begin("IO Ports");
 		{
-            ImGuiWindowFlags window_flags = ImGuiWindowFlags_None;
-            ImGui::BeginChild("##ioT", ImVec2(0, 96), true, window_flags);
+	        ImGuiWindowFlags window_flags = ImGuiWindowFlags_None;
+	        ImGui::BeginChild("##ioT", ImVec2(0, 96), true, window_flags);
 
 			ImGui::Text("Start (Hex)");
 			ImGui::SameLine();
@@ -560,8 +555,8 @@ int main(int argc, char **argv) {
 			if (ImGui::Button("Reset"))
 				memset(IO, 0, 0x100);
 
-            ImGui::EndChild();
-            ImGui::BeginChild("##ioB", ImVec2(0, 0), true, window_flags);
+	        ImGui::EndChild();
+	        ImGui::BeginChild("##ioB", ImVec2(0, 0), true, window_flags);
 
 			char buf[32];
 			if (ImGui::BeginTable("##io", 4, flags)) {
@@ -604,14 +599,14 @@ int main(int argc, char **argv) {
 				}
 				ImGui::EndTable();
 			}
-            ImGui::EndChild();
+	        ImGui::EndChild();
 		}
 		ImGui::End();
 
 		ImGui::Begin("Memory");
 		{
-            ImGuiWindowFlags window_flags = ImGuiWindowFlags_None;
-            ImGui::BeginChild("##memoryT", ImVec2(0, 96), true, window_flags);
+	        ImGuiWindowFlags window_flags = ImGuiWindowFlags_None;
+	        ImGui::BeginChild("##memoryT", ImVec2(0, 96), true, window_flags);
 
 			ImGui::Text("Start (Hex)");
 			ImGui::SameLine();
@@ -624,8 +619,8 @@ int main(int argc, char **argv) {
 				memset(memory, 0, 0x10000);
 			}
 
-            ImGui::EndChild();
-            ImGui::BeginChild("##memoryB", ImVec2(0, 0), true, window_flags);
+	        ImGui::EndChild();
+	        ImGui::BeginChild("##memoryB", ImVec2(0, 0), true, window_flags);
 
 			int memend = memstart + 0x100 < 0x10000 ? memstart + 0x100 : 0x10000;
 			char buf[32];
@@ -669,7 +664,7 @@ int main(int argc, char **argv) {
 				}
 				ImGui::EndTable();
 			}
-            ImGui::EndChild();
+	        ImGui::EndChild();
 		}
 		ImGui::End();
 
@@ -681,12 +676,12 @@ int main(int argc, char **argv) {
 		ImGui::End();
 		ImGui::PopStyleVar();
 
-        // Rendering
-        ImGui::Render();
-        glClearColor(clear_color.x * clear_color.w, clear_color.y * clear_color.w, clear_color.z * clear_color.w, clear_color.w);
-        glClear(GL_COLOR_BUFFER_BIT);
-        ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
-        glfwSwapBuffers(window);
+	    // Rendering
+	    ImGui::Render();
+	    glClearColor(clear_color.x * clear_color.w, clear_color.y * clear_color.w, clear_color.z * clear_color.w, clear_color.w);
+	    glClear(GL_COLOR_BUFFER_BIT);
+	    ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+	    glfwSwapBuffers(window);
 
 		if (pls_tokenize) {
 			reset_load();
@@ -1067,7 +1062,7 @@ int main(int argc, char **argv) {
 
 #define INR(x) \
 		case INR_ ##x: { \
-			REGISTER(x) = ALU(REGISTER(x), 1, '-', 0); \
+			REGISTER(x) = ALU(REGISTER(x), 1, '+', 0); \
 			PC++; \
 		} break
 
@@ -1123,13 +1118,14 @@ int main(int argc, char **argv) {
 
 #define DAD(rp) \
 		case DAD_ ##rp: { \
-			LOWER_BYTE_H += LOWER_BYTE_ ##rp; \
 			char ic = (LOWER_BYTE_H + LOWER_BYTE_ ##rp) > 0xFF;\
-			UPPER_BYTE_H += UPPER_BYTE_ ##rp; \
-			UPPER_BYTE_H += ic; \
 			(REG_PAIR(rp) + REG_PAIR(H) > 0xFFFF) ? \
 				SET(REGISTER(F), FLAG_CY): \
 				RESET(REGISTER(F), FLAG_CY); \
+			LOWER_BYTE_H += LOWER_BYTE_ ##rp; \
+			UPPER_BYTE_H += UPPER_BYTE_ ##rp; \
+			UPPER_BYTE_H += ic; \
+			PC ++; \
 		} break
 
 			DAD(B);
@@ -1413,11 +1409,11 @@ int main(int argc, char **argv) {
 			++PC; break;
 
 		case IN:
-			REGISTER(A) = IO[++PC];
+			REGISTER(A) = IO[memory[++PC]];
 			++PC; break;
 
 		case OUT:
-			IO[++PC] = REGISTER(A);
+			IO[memory[++PC]] = REGISTER(A);
 			++PC; break;
 
 		default:
@@ -1430,15 +1426,15 @@ int main(int argc, char **argv) {
 		if (single_step) {
 			program_should_run = false;
 		}
-    }
+	}
 
-    // Cleanup
-    ImGui_ImplOpenGL3_Shutdown();
-    ImGui_ImplGlfw_Shutdown();
-    ImGui::DestroyContext();
+	// Cleanup
+	ImGui_ImplOpenGL3_Shutdown();
+	ImGui_ImplGlfw_Shutdown();
+	ImGui::DestroyContext();
 
-    glfwDestroyWindow(window);
-    glfwTerminate();
+	glfwDestroyWindow(window);
+	glfwTerminate();
 
 	return 0;
 }
